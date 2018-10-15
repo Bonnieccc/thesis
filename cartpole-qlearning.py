@@ -9,7 +9,13 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import time
 
-from spectral_filtering import wave_filter
+import spectral_filtering as sf
+from statsmodels.tsa.ar_model import AR
+from statsmodels.tsa.arima_model import ARMA
+from statsmodels.tsa.vector_ar.var_model import VAR
+from sklearn.metrics import mean_squared_error
+
+from control import lqr
 
 class CartPoleQLearningAgent:
     def __init__(self,
@@ -199,7 +205,7 @@ def run_agent(env, verbose=False):
     max_timesteps_per_episode = 500
 
     goal_avg_episode_length = 495
-    goal_consecutive_episodes = 500
+    goal_consecutive_episodes = 300
 
     plot_episode_count = 200
     plot_redraw_frequency = 10
@@ -265,9 +271,105 @@ def save_history(history, experiment_dir):
     dataframe = pd.DataFrame(history.lengths, columns=["length"])
     dataframe.to_csv(filename, header=True, index_label="episode")
 
+
+def collect_episode(env, agent, T=500, discretize=False):
+
+    X = []
+    Y = []
+
+    state = env.reset()
+    action = agent.begin_episode(state)
+    t = 0
+    while t < T:
+
+        # Get the next action from the learner, given our new state.
+        next_state, reward, done, info = env.step(action)
+        action = agent.act_policy(next_state)
+
+        # Construct trial matrices X and Y
+        if discretize:
+            X.append(agent._build_state(state))
+            Y.append(agent._build_state(next_state))
+        else:
+            X.append(state)
+            Y.append(next_state)
+
+        if done:
+            state = env.reset()
+            action = agent.begin_episode(next_state)
+
+        state = next_state
+        t = t + 1
+
+    print("Trial episode: lasted {} timesteps".format(t))
+
+    X = np.array(X).T # list to numpy matrix
+    Y = np.array(Y).T # list to numpy matrix
+    return X,Y
+
+
+def run_spectral_filtering(env, agent, k=20, T=500, num_trials=5):
+
+    avg_losses = np.zeros(shape=(T))
+
+    for trial in range(num_trials):
+
+        X,Y = collect_episode(env, agent, T)
+
+        # compute eigenpairs
+        vals, vecs = sf.eigen_pairs(T, k)
+
+        # run wave filtering on episode data.
+        avg_losses += sf.wave_filter(X, Y, k, vals, vecs,verbose=True)
+
+    return avg_losses/num_trials
+
+
+def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=1):
+    X,_ = collect_episode(env, agent, T)
+    data = np.transpose(X)
+
+    train, test = data[0:len(data)-test_size], data[len(data)-test_size:]
+
+    # train autoregression
+    model = VAR(train)
+
+    model_fit = model.fit(lag)
+    window = model_fit.k_ar
+
+    history = train[len(train)-window:]
+    history = [history[i] for i in range(len(history))]
+    predictions = []
+    # walk forward over time steps in test and make predictions
+    for t in range(len(test)):
+        obs = test[t]
+        prediction = model_fit.forecast(history[len(history)-window:], 1)[0]
+        # print model_fit.coefs
+        print('predicted=%s, expected=%s' % (np.array2string(prediction), np.array2string(obs)))
+        history.append(obs)
+        predictions.append(prediction)
+    error = mean_squared_error(test, predictions)
+    print('Test MSE for lag=%d: %.3f' % (lag, error))
+    # plot
+    plt.plot(test, color='blue')
+    plt.plot(predictions, color='red')
+    plt.show()
+
+
+    # control with lqr
+
+    # todo: use this to control the env.
+    Q = np.diag((10., 1., 10., 1.))
+    R = [1]
+
+    lqr(model_fit.coefs, [0], Q, R)
+
+
+
 def main():
-    monitor = True
-    random_state = np.random.randint(5)
+    monitor = False
+    np.random.seed(seed=int(time.time()))
+    random_state = np.random.randint(1)
     experiment_dir = "cartpole-qlearning-1"
 
     env = gym.make("CartPole-v1")
@@ -294,6 +396,11 @@ def main():
             if done:
                 print("Final episode: lasted {} timesteps, data: {}".format(t+1, observation))
                 break
+
+    
+    # avg_loss_vec = run_spectral_filtering(env, agent, 25, 500, num_trials=1)
+    run_linear_regression(env, agent, 4000)
+
 
 if __name__ == "__main__":
     main()
