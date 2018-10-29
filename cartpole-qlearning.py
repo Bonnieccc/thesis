@@ -2,20 +2,17 @@
 # Github link: https://github.com/YuriyGuts/cartpole-q-learning/blob/master/cartpole.py
 
 import os
-
 import gym
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
-
 import spectral_filtering as sf
-from statsmodels.tsa.ar_model import AR
-from statsmodels.tsa.arima_model import ARMA
 from statsmodels.tsa.vector_ar.var_model import VAR
 from sklearn.metrics import mean_squared_error
+import control
+import scipy.linalg
 
-from control import lqr
 
 class CartPoleQLearningAgent:
     def __init__(self,
@@ -276,12 +273,13 @@ def collect_episode(env, agent, T=500, discretize=False):
 
     X = []
     Y = []
+    actions = []
 
     state = env.reset()
     action = agent.begin_episode(state)
     t = 0
     while t < T:
-
+        actions.append(action)
         # Get the next action from the learner, given our new state.
         next_state, reward, done, info = env.step(action)
         action = agent.act_policy(next_state)
@@ -305,7 +303,7 @@ def collect_episode(env, agent, T=500, discretize=False):
 
     X = np.array(X).T # list to numpy matrix
     Y = np.array(Y).T # list to numpy matrix
-    return X,Y
+    return X,Y, actions
 
 
 def run_spectral_filtering(env, agent, k=20, T=500, num_trials=5):
@@ -314,7 +312,7 @@ def run_spectral_filtering(env, agent, k=20, T=500, num_trials=5):
 
     for trial in range(num_trials):
 
-        X,Y = collect_episode(env, agent, T)
+        X,Y,_ = collect_episode(env, agent, T)
 
         # compute eigenpairs
         vals, vecs = sf.eigen_pairs(T, k)
@@ -324,16 +322,29 @@ def run_spectral_filtering(env, agent, k=20, T=500, num_trials=5):
 
     return avg_losses/num_trials
 
+def get_control(K, state):
+    val = np.dot(-K, state)
+    action = 0 if (val < 0) else 1
+    return action
 
-def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=1):
-    X,_ = collect_episode(env, agent, T)
+def lqr(A,B,Q,R):
+    # Solves for the optimal infinite-horizon LQR gain matrix given linear system (A,B) 
+    # and cost function parameterized by (Q,R)
+    
+    # solve DARE:
+    M = scipy.linalg.solve_discrete_are(A,B,Q,R)
+
+    # K=(B'MB + R)^(-1)*(B'MA)
+    return np.dot(scipy.linalg.inv(np.dot(np.dot(B.T,M),B)+R),(np.dot(np.dot(B.T,M),A)))
+
+
+def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=1, plotVAR=False):
+    X,_,_ = collect_episode(env, agent, T)
     data = np.transpose(X)
-
     train, test = data[0:len(data)-test_size], data[len(data)-test_size:]
 
     # train autoregression
     model = VAR(train)
-
     model_fit = model.fit(lag)
     window = model_fit.k_ar
 
@@ -344,32 +355,58 @@ def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=1):
     for t in range(len(test)):
         obs = test[t]
         prediction = model_fit.forecast(history[len(history)-window:], 1)[0]
-        # print model_fit.coefs
         print('predicted=%s, expected=%s' % (np.array2string(prediction), np.array2string(obs)))
         history.append(obs)
         predictions.append(prediction)
     error = mean_squared_error(test, predictions)
     print('Test MSE for lag=%d: %.3f' % (lag, error))
     # plot
-    plt.plot(test, color='blue')
-    plt.plot(predictions, color='red')
-    plt.show()
+    if plotVAR:
+        plt.plot(test, color='blue')
+        plt.plot(predictions, color='red')
+        plt.show()
+    return model_fit, data
 
 
-    # control with lqr
-
-    # todo: use this to control the env.
+def control_lqr(env, agent, model_fit, data, lag=1):
+    B = np.array([[0],[0], [-.01], [-.01]])
     Q = np.diag((10., 1., 10., 1.))
-    R = [1]
 
-    lqr(model_fit.coefs, [0], Q, R)
+    print(model_fit.coefs)
 
+    K = lqr(model_fit.coefs[0], B, Q, 1)
+    print("K=")
+    print(K)
+
+    obs = env.reset()
+    action = agent.begin_episode(obs)
+    for i in range(500):
+        env.render()
+        time.sleep(0.15) # slows down process to make it more visible
+
+        # recompute K every 50 steps
+        np.append(data, obs)
+        if (i % 50 == 0): 
+            model_next = VAR(data)
+            model_fit_next = model_next.fit(lag)
+            K = lqr(model_fit_next.coefs[0], B, Q, 1)
+            print("K=")
+            print(K)
+
+        action = get_control(K, obs)
+
+        # Get the next action from the learner, given our new state.
+        obs, reward, done, info = env.step(action)
+
+        if done:
+            print("Final episode: lasted {} timesteps, data: {}".format(i+1, obs))
+            break
 
 
 def main():
     monitor = False
     np.random.seed(seed=int(time.time()))
-    random_state = np.random.randint(1)
+    random_state = np.random.randint(2)
     experiment_dir = "cartpole-qlearning-1"
 
     env = gym.make("CartPole-v1")
@@ -399,7 +436,8 @@ def main():
 
     
     # avg_loss_vec = run_spectral_filtering(env, agent, 25, 500, num_trials=1)
-    run_linear_regression(env, agent, 4000)
+    model_fit, data = run_linear_regression(env, agent, 4000)
+    control_lqr(env, agent, model_fit, data)
 
 
 if __name__ == "__main__":
