@@ -12,6 +12,7 @@ from statsmodels.tsa.vector_ar.var_model import VAR
 from sklearn.metrics import mean_squared_error
 import control
 import scipy.linalg
+import copy
 
 
 class CartPoleQLearningAgent:
@@ -338,7 +339,7 @@ def lqr(A,B,Q,R):
     return np.dot(scipy.linalg.inv(np.dot(np.dot(B.T,M),B)+R),(np.dot(np.dot(B.T,M),A)))
 
 
-def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=1, plotVAR=False):
+def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=4, plotVAR=False):
     X,_,_ = collect_episode(env, agent, T)
     data = np.transpose(X)
     train, test = data[0:len(data)-test_size], data[len(data)-test_size:]
@@ -368,7 +369,7 @@ def run_linear_regression(env, agent, T=500, p=2, q=2,test_size=100, lag=1, plot
     return model_fit, data
 
 
-def control_lqr(env, agent, model_fit, data, lag=1):
+def control_lqr(env, agent, model_fit, data, lag=4):
     B = np.array([[0],[0], [-.01], [-.01]])
     Q = np.diag((10., 1., 10., 1.))
 
@@ -384,14 +385,14 @@ def control_lqr(env, agent, model_fit, data, lag=1):
         env.render()
         time.sleep(0.15) # slows down process to make it more visible
 
-        # recompute K every 50 steps
-        np.append(data, obs)
-        if (i % 50 == 0): 
+        # recompute K every 10 steps
+        data = np.vstack([data, obs])
+        if (i % 10 == 0):
             model_next = VAR(data)
             model_fit_next = model_next.fit(lag)
             K = lqr(model_fit_next.coefs[0], B, Q, 1)
-            print("K=")
-            print(K)
+            # print("K=")
+            # print(K)
 
         action = get_control(K, obs)
 
@@ -406,12 +407,12 @@ def control_lqr(env, agent, model_fit, data, lag=1):
 def main():
     monitor = False
     np.random.seed(seed=int(time.time()))
-    random_state = np.random.randint(2)
-    experiment_dir = "cartpole-qlearning-1"
+    # random_state = np.random.randint(2)
 
     env = gym.make("CartPole-v1")
-    env.seed(random_state)
-    np.random.seed(random_state)
+
+    # env.seed(random_state)
+    # np.random.seed(random_state)
 
     agent, episode_history = run_agent(env, verbose=False)   # Set verbose=False to greatly speed up the process.
 
@@ -438,7 +439,9 @@ def main():
     # avg_loss_vec = run_spectral_filtering(env, agent, 25, 500, num_trials=1)
     model_fit, data = run_linear_regression(env, agent, 4000)
     control_lqr(env, agent, model_fit, data)
+    # control_lqr_finite_differences(env, agent)
 
+    env.close()
 
 if __name__ == "__main__":
     main()
