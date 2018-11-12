@@ -1,28 +1,41 @@
-# Bin state/action space into N discrete bins
-# Randomly move agent around in the space for T steps. 
-# Get a frequency distribution over the number of times you visit bins.
-	# Transform this into a probability distribution
-# Compute the entropy measure over the distribution 
-# Compute gradient of entropy with respect to p1...pn
-	# This is the reward function for the iteration
-	# Find new distribution p_t+1 that maximizes this reward
-	# This distribution becomes new policy
-
-# At the end, return the average policy over all iterations (i.e. average over all pi)
+# experimenting with curiosity exploration method.
+# Code derived from: https://github.com/pytorch/examples/blob/master/reinforcement_learning/reinforce.py
 
 
-
-# Later: update function weighted to smooth changes
-# pt* = p_t-1*(1 - 1/t) + 1/t(pt)
-
-# want to examne the distribution achieved over the state/action space
+import os
+import sys
+import time
+from datetime import datetime
+import logging
+import argparse
 
 import numpy as np
+from itertools import count
+
 import gym
-import time
 from gym.spaces import prng
-import tensorflow as tf
-import tensorflow.contrib.slim as slim
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.distributions import Categorical
+
+
+parser = argparse.ArgumentParser(description='PyTorch REINFORCE example')
+
+parser.add_argument('--gamma', type=float, default=0.99, metavar='g',
+                    help='learning rate')
+parser.add_argument('--render', action='store_true',
+                    help='render the environment')
+parser.add_argument('--collect', action='store_true',
+                    help='collect a fresh set of policies')
+parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                    help='interval between training status logs')
+parser.add_argument('--models_dir', type=str, default='models_2018_11_11-23-15/', metavar='N',
+                    help='directory from which to load model policies')
+args = parser.parse_args()
+
 
 
 def discretize_range(lower_bound, upper_bound, num_bins):
@@ -31,208 +44,241 @@ def discretize_range(lower_bound, upper_bound, num_bins):
 def discretize_value(value, bins):
 	return np.asscalar(np.digitize(x=value, bins=bins))
 
-def discretize_state(observation, state_bins):
+# Set up environment.
+nx = 10
+nv = 4
+S = nx*nv
+
+state_bins = [
+    # Cart position.
+    discretize_range(-1.2, 0.6, nx), 
+    # Cart velocity.
+    discretize_range(-0.07, 0.07, nv)
+]
+
+num_states = [(len(state_bins[0]) + 1),
+              (len(state_bins[1]) + 1)]
+
+
+def discretize_state(observation):
     # Discretize the observation features and reduce them to a single list.
     state = []
     for i, feature in enumerate(observation):
         state.append(discretize_value(feature, state_bins[i]))
     return state
 
-# map negative actions to 0, positive to 1
-def discretize_action(action):
-	if np.sign(action) == 1:
-		return 1
-	return 0
 
-class Agent():
-    def __init__(self, lr, s_size,a_size,h_size):
-        #These lines established the feed-forward part of the network. The agent takes a state and produces an action.
-        self.state_in= tf.placeholder(shape=[None,s_size],dtype=tf.float32)
-        hidden = slim.fully_connected(self.state_in,h_size,biases_initializer=None,activation_fn=tf.nn.relu)
-        self.output = slim.fully_connected(hidden,a_size,activation_fn=tf.nn.softmax,biases_initializer=None)
-        self.chosen_action = tf.argmax(self.output,1)
+class Policy(nn.Module):
+    def __init__(self):
+        super(Policy, self).__init__()
+        self.affine1 = nn.Linear(2, 128)
+        self.affine2 = nn.Linear(128, 2)
 
-        #The next six lines establish the training proceedure. We feed the reward and chosen action into the network
-        #to compute the loss, and use it to update the network.
-        self.reward_holder = tf.placeholder(shape=[None],dtype=tf.float32)
-        self.action_holder = tf.placeholder(shape=[None],dtype=tf.int32)
-        
-        self.indexes = tf.range(0, tf.shape(self.output)[0]) * tf.shape(self.output)[1] + self.action_holder
-        self.responsible_outputs = tf.gather(tf.reshape(self.output, [-1]), self.indexes)
+        self.saved_log_probs = []
+        self.rewards = []
 
-        self.loss = -tf.reduce_mean(tf.log(self.responsible_outputs)*self.reward_holder)
-        
-        tvars = tf.trainable_variables()
-        self.gradient_holders = []
-        for idx,var in enumerate(tvars):
-            placeholder = tf.placeholder(tf.float32,name=str(idx)+'_holder')
-            self.gradient_holders.append(placeholder)
-        
-        self.gradients = tf.gradients(self.loss,tvars)
-        
-        optimizer = tf.train.AdamOptimizer(learning_rate=lr)
-        self.update_batch = optimizer.apply_gradients(zip(self.gradient_holders,tvars))
+        self.optimizer = optim.Adam(self.parameters(), lr=1e-2)
+        self.eps = np.finfo(np.float32).eps.item()
 
-gamma = 0.99
+    def forward(self, x):
+        x = F.relu(self.affine1(x))
+        action_scores = self.affine2(x)
+        return F.softmax(action_scores, dim=1)
 
-def discount_rewards(r):
-    """ take 1D float array of rewards and compute discounted reward """
-    discounted_r = np.zeros_like(r)
-    running_add = 0
-    for t in reversed(range(0, r.size)):
-        running_add = running_add * gamma + r[t]
-        discounted_r[t] = running_add
-    return discounted_r
+    def get_probs(self, state):
+        state = torch.from_numpy(state).float().unsqueeze(0)
+        probs = self.forward(state)
+        return probs
 
-def is_goal_reached(rewards, goal_consecutive_episodes, goal_reward):
-    avg = np.mean(rewards[-goal_consecutive_episodes:])
-    return avg >= goal_reward and len(rewards) > goal_consecutive_episodes
+    def select_action(self, state):
+        state = torch.from_numpy(state).float().unsqueeze(0)
+        probs = self.forward(state)
+        m = Categorical(probs)
+        action = m.sample()
+        self.saved_log_probs.append(m.log_prob(action))
+        return action.item() - 0.5
 
-def train_agent(env, reward, state_bins):
-    tf.reset_default_graph() #Clear the Tensorflow graph.
+    def update_policy(self):
+        R = 0
+        policy_loss = []
+        rewards = []
 
-    agent = Agent(lr=1e-2, s_size=2, a_size=2, h_size=8) #Load the agent.
+        # Get discounted rewards from the episode.
+        for r in self.rewards[::-1]:
+            R = r + args.gamma * R
+            rewards.insert(0, R)
+        rewards = torch.tensor(rewards)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + self.eps)
 
-    total_episodes = 2000 # Set total number of episodes to train agent on.
-    episode_steps = 999
-    update_frequency = 5
+        for log_prob, reward in zip(self.saved_log_probs, rewards):
+            policy_loss.append(-log_prob * reward)
 
-    init = tf.global_variables_initializer()
-    avg_history = []
-    # Launch the tensorflow graph
-    with tf.Session() as sess:
-        sess.run(init)
-        i = 0
+        self.optimizer.zero_grad()
+        policy_loss = torch.cat(policy_loss).sum()
+        policy_loss.backward()
+        self.optimizer.step()
+        self.rewards.clear()
+        self.saved_log_probs.clear()
 
-        gradBuffer = sess.run(tf.trainable_variables())
-        for ix,grad in enumerate(gradBuffer):
-            gradBuffer[ix] = grad * 0
-            
-        episode_rewards = []
-        episode_lengths = []
-        while i < total_episodes:
+    def learn_policy(self, reward_fn, env):
+
+        running_reward = 0
+        for i_episode in range(300):
             state = env.reset()
-            running_reward = 0
-            ep_history = []
-            for j in range(episode_steps):
-                #Probabilistically pick an action given our network outputs.
-                a_dist = sess.run(agent.output,feed_dict={agent.state_in:[state]})
-                a = np.random.choice(a_dist[0],p=a_dist[0])
-                a = np.argmax(a_dist == a)
-
-                next_state, r, done, info = env.step([a])
-                ep_history.append([state,a,r,next_state])
-                state = next_state
-                running_reward += reward[discretize_state(state, state_bins)]
+            ep_reward = 0
+            for t in range(1000):  # Don't infinite loop while learning
+                action = self.select_action(state)
+                state, _, done, _ = env.step([action])
+                reward = reward_fn[tuple(discretize_state(state))]
+                ep_reward += reward
+                self.rewards.append(reward)
                 if done:
-                    #Update the network.
-                    ep_history = np.array(ep_history)
-                    ep_history[:,2] = discount_rewards(ep_history[:,2])
-                    feed_dict = {agent.reward_holder:ep_history[:,2],
-                                agent.action_holder:ep_history[:,1], 
-                                agent.state_in:np.vstack(ep_history[:,0])}
-                    grads = sess.run(agent.gradients, feed_dict=feed_dict)
-                    for idx,grad in enumerate(grads):
-                        gradBuffer[idx] += grad
+                    env.reset()
 
-                    if i % update_frequency == 0 and i != 0:
-                        feed_dict= dictionary = dict(zip(agent.gradient_holders, gradBuffer))
-                        _ = sess.run(agent.update_batch, feed_dict=feed_dict)
-                        for ix,grad in enumerate(gradBuffer):
-                            gradBuffer[ix] = grad * 0
-                    
-                    episode_rewards.append(running_reward)
-                    episode_lengths.append(j)
-                    break
+            running_reward = running_reward * 0.99 + ep_reward * 0.01
+            if (i_episode == 0):
+                running_reward = ep_reward
+            
+            self.update_policy()
 
-            #Update our running tally of scores.
-            if i % 100 == 0:
-                avg = np.mean(episode_rewards[-100:])
-                print(np.mean(avg))
-                equal = [x for x in avg_history[-3:] if x == avg]
-                print(avg_history)
-                print(equal)
-                if len(equal) == 3:
-                    return agent
-                avg_history.append(avg)
-            i += 1
+            # Log to console.
+            if i_episode % args.log_interval == 0:
+                print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}'.format(
+                    i_episode, ep_reward, running_reward))
 
-            # # return if the last 1000 have adequate avg reward.
-            # if is_goal_reached(episode_rewards, 1000, 999):
-            #     return agent
+    def execute(self, env, T):
+        p = np.zeros(shape=(num_states[0],
+                           num_states[1]))
+        state = env.reset()
+        for t in range(T):  
+            action = self.select_action(state)
+            state, reward, done, _ = env.step([action])
+            p[tuple(discretize_state(state))] += 1
 
-    return agent
+            if done:
+                env.reset()
 
-# act according to the agent's learned policy.
-def execute_policy(env, agent, steps, state_bins):
-    num_actions = 2
-    num_states = [(len(state_bins[0]) + 1),
-                  (len(state_bins[1]) + 1)]
+        return p/float(T)
 
+def select_step(probs):
+    m = Categorical(probs)
+    action = m.sample()
+    return action.item() - 0.5
+
+def execute_average_policy(env, policies, T):
+    # run a simulation to see how the average policy behaves.
     p = np.zeros(shape=(num_states[0],
                         num_states[1]))
+    state = env.reset()
+    for i in range(T):
+        # Compute average probability over action space for state.
+        probs = torch.tensor([[0., 0.]])
+        for policy in policies:
+            probs += policy.get_probs(state)
+        probs /= len(policies)
 
-    obs = env.reset()
-    with tf.Session() as sess:
-    	for step in range(steps):
-    		# Probabilistically pick an action given our network outputs.
-    	    a_dist = sess.run(agent.output,feed_dict={agent.state_in:[obs]})
-    	    a = np.random.choice(a_dist[0],p=a_dist[0])
-    	    a = np.argmax(a_dist == a)
+        # Select a step.
+        action = select_step(probs)
+        state, reward, done, _ = env.step([action])
+        p[tuple(discretize_state(state))] += 1
 
-    	    obs, reward, done, info = env.step([a])
-    	    p[discretize_state(obs, state_bins)] += 1
+        if args.render:
+            env.render()
+        if done:
+            env.reset()
 
-    p = np.reshape(p/float(steps), -1)
-    return p
+    return p / float(T)
 
 # TODO: Is this right????
 def grad_ent(pt):
-    return -np.log(pt) - 1
+    grad_p = -np.log(pt)
+    grad_p[grad_p > 100] = 200
+    return grad_p
+
+# Iteratively collect and learn T policies using policy gradients and a reward
+# function based on entropy.
+def collect_entropy_policies(env, iterations, T, logger):
+    MODEL_DIR = 'models_' + TIME + '/'
+    os.mkdir(MODEL_DIR)
+    reward_fn = np.ones(shape=(num_states[0],
+                               num_states[1]))
+    policies = []
+    for i in range(iterations):
+        # Learn policy that maximizes current reward function.
+        policy = Policy()
+        policy.learn_policy(reward_fn, env)
+
+        # Get next distribution p by executing pi for T steps.
+        p = policy.execute(env, T)
+
+        logger.debug('Iteration: ' + str(i))
+        logger.debug(p)
+        logger.debug(reward_fn)
+
+        print("p=")
+        print(p)
+        print("reward_fn=")
+        print(reward_fn)
+        print("----------------------")
+
+        reward_fn = grad_ent(p)
+        policies.append(policy)
+
+        # save the policy
+        torch.save(policy, MODEL_DIR + 'model_' + str(i) + '.pt')
+
+    return policies
+
+def load_from_dir(directory):
+    # for all
+    policies = []
+    files = os.listdir(directory)
+    for file in files:
+        policy = torch.load(directory + file)
+        policies.append(policy)
+    return policies
 
 def main():
-    nx = 15
-    nv = 15
-    S = nx*nv
-    state_bins = [
-        # Cart position.
-        discretize_range(-1.2, 0.6, nx), 
-        # Cart velocity.
-        discretize_range(-0.07, 0.07, nv)
-    ]
 
-    num_actions = 2
-    num_states = [(len(state_bins[0]) + 1),
-    			  (len(state_bins[1]) + 1)]
-
+    np.set_printoptions(suppress=True)
 
     # Make environment.
     env = gym.make("MountainCarContinuous-v0")
     env.seed(int(time.time())) # seed environment
     prng.seed(int(time.time())) # seed action space
 
-    steps = 1000
+    # Set up experiment variables.
+    iterations = 100
+    T = 10000
 
-    T = 1000
-    p = np.ones(shape=(num_states[0],
-                       num_states[1]))/2.
-    reward = np.ones(shape=(num_states[0],
-                            num_states[1]))
-    for i in range(T):
-        # print(reward)
-        reward = grad_ent(p)
-        # Learn policy that maximizes current reward function.
-        agent = train_agent(env, reward, state_bins)
-        # Get next distribution p by executing pi.
-        p = execute_policy(env, agent, steps, state_bins)
-        print("p_t = ")
-        print(p)
+    # Collect policies.
+    if args.collect:
+        # set up logging to file 
+        TIME = datetime.now().strftime('%Y_%m_%d-%H-%M')
+        LOG_DIR = 'logs/'
+        FILE_NAME = 'test' + TIME
+        logging.basicConfig(level=logging.DEBUG,
+                            format='%(message)s',
+                            datefmt='%m-%d %H:%M',
+                            filename=LOG_DIR + FILE_NAME + '.log',
+                            filemode='w')
+        logger = logging.getLogger('curiosity.pt')
+        policies = collect_entropy_policies(env, iterations, T, logger)
+    else:
+        policies = load_from_dir(args.models_dir)
+   
+    average_p = execute_average_policy(env, policies, T)
 
-# Find pt
-# Compute gradient of entry of pt —-> take as reward function
-# Perform policy gradient to find optimal policy pi given the reward function
-# Run it around in the environment to get the next pt+1
 
+    if args.collect:
+        logger.debug('*************')
+        logger.debug(average_p)
+
+    print('*************')
+    print(average_p)
+
+    env.close()
+        
 
 if __name__ == "__main__":
     main()
