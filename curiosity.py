@@ -1,7 +1,6 @@
 # experimenting with curiosity exploration method.
 # Code derived from: https://github.com/pytorch/examples/blob/master/reinforcement_learning/reinforce.py
 
-
 import os
 import sys
 import time
@@ -35,7 +34,6 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
 parser.add_argument('--models_dir', type=str, default='models_2018_11_11-23-15/', metavar='N',
                     help='directory from which to load model policies')
 args = parser.parse_args()
-
 
 
 def discretize_range(lower_bound, upper_bound, num_bins):
@@ -192,13 +190,13 @@ def execute_average_policy(env, policies, T):
 # TODO: Is this right????
 def grad_ent(pt):
     grad_p = -np.log(pt)
-    grad_p[grad_p > 100] = 200
+    grad_p[grad_p > 100] = 500
     return grad_p
 
 # Iteratively collect and learn T policies using policy gradients and a reward
 # function based on entropy.
-def collect_entropy_policies(env, iterations, T, logger):
-    MODEL_DIR = 'models_' + TIME + '/'
+def collect_entropy_policies(env, iterations, T, current_time, logger):
+    MODEL_DIR = 'models_' + current_time + '/'
     os.mkdir(MODEL_DIR)
     reward_fn = np.ones(shape=(num_states[0],
                                num_states[1]))
@@ -263,7 +261,7 @@ def main():
                             filename=LOG_DIR + FILE_NAME + '.log',
                             filemode='w')
         logger = logging.getLogger('curiosity.pt')
-        policies = collect_entropy_policies(env, iterations, T, logger)
+        policies = collect_entropy_policies(env, iterations, T, TIME, logger)
     else:
         policies = load_from_dir(args.models_dir)
    
