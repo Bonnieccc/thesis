@@ -11,7 +11,7 @@ from torch.distributions import Normal
 
 # Vanilla Policy Gradient with entropy exploration.
 class ExplorePolicy(nn.Module):
-    def __init__(self, env, obs_dim, action_dim, exploration_policy, lr, gamma): 
+    def __init__(self, env, obs_dim, action_dim, exploration_policy, lr, gamma, eps=0.05): 
 
         super(ExplorePolicy, self).__init__()
         self.obs_dim = obs_dim
@@ -31,7 +31,7 @@ class ExplorePolicy(nn.Module):
 
         self.exploration_policy = exploration_policy
         self.env = env
-        self.epsilon = 0.05 # TODO: play with this. 
+        self.epsilon = eps # TODO: play with this. 
         self.gamma = gamma
 
         random.seed(time.time())
