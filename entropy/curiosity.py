@@ -9,10 +9,9 @@ import logging
 import argparse
 
 import numpy as np
-from itertools import count
-
 import gym
 from gym.spaces import prng
+from explore_policy import ExplorePolicy
 
 import torch
 import torch.nn as nn
@@ -25,6 +24,8 @@ parser = argparse.ArgumentParser(description='PyTorch REINFORCE example')
 
 parser.add_argument('--gamma', type=float, default=0.99, metavar='g',
                     help='learning rate')
+parser.add_argument('--lr', type=float, default=1e-4, metavar='lr',
+                    help='learning rate')
 parser.add_argument('--render', action='store_true',
                     help='render the environment')
 parser.add_argument('--collect', action='store_true',
@@ -33,6 +34,8 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='interval between training status logs')
 parser.add_argument('--models_dir', type=str, default='models/models_2018_11_11-23-15/', metavar='N',
                     help='directory from which to load model policies')
+parser.add_argument('--learned_filename', type=str, default='learned_policy.pt', metavar='ln',
+                    help='file to save learned policy')
 args = parser.parse_args()
 
 
@@ -45,6 +48,8 @@ def discretize_value(value, bins):
 # Set up environment.
 nx = 10
 nv = 4
+obs_dim = 2
+action_dim = 2
 # S = nx*nv
 
 state_bins = [
@@ -65,6 +70,16 @@ def discretize_state(observation):
         state.append(discretize_value(feature, state_bins[i]))
     return state
 
+def average_policies(policies):
+    state_dict = policies[0].state_dict()
+    for i in range(1, len(policies)):
+        for k, v in policies[i].state_dict().items():
+            state_dict[k] += v
+
+    for k, v in state_dict.items():
+        state_dict[k] /= float(len(policies))
+
+    return state_dict
 
 class Policy(nn.Module):
     def __init__(self):
@@ -94,7 +109,7 @@ class Policy(nn.Module):
         m = Categorical(probs)
         action = m.sample()
         self.saved_log_probs.append(m.log_prob(action))
-        return action.item() - 0.5
+        return [action.item() - 0.5]
 
     def update_policy(self):
         R = 0
@@ -126,7 +141,7 @@ class Policy(nn.Module):
             ep_reward = 0
             for t in range(1000):  # Don't infinite loop while learning
                 action = self.select_action(state)
-                state, _, done, _ = env.step([action])
+                state, _, done, _ = env.step(action)
                 reward = reward_fn[tuple(discretize_state(state))]
                 ep_reward += reward
                 self.rewards.append(reward)
@@ -150,13 +165,16 @@ class Policy(nn.Module):
         state = env.reset()
         for t in range(T):  
             action = self.select_action(state)
-            state, reward, done, _ = env.step([action])
+            state, reward, done, _ = env.step(action)
             p[tuple(discretize_state(state))] += 1
 
             if done:
                 env.reset()
 
         return p/float(T)
+
+    def save(self, filename):
+        torch.save(self, filename)
 
 def select_step(probs):
     m = Categorical(probs)
@@ -195,8 +213,7 @@ def grad_ent(pt):
 
 # Iteratively collect and learn T policies using policy gradients and a reward
 # function based on entropy.
-def collect_entropy_policies(env, iterations, T, current_time, logger):
-    MODEL_DIR = 'models/models_' + current_time + '/'
+def collect_entropy_policies(env, iterations, T, MODEL_DIR, logger):
     os.mkdir(MODEL_DIR)
     reward_fn = np.ones(shape=(num_states[0],
                                num_states[1]))
@@ -220,10 +237,11 @@ def collect_entropy_policies(env, iterations, T, current_time, logger):
         print("----------------------")
 
         reward_fn = grad_ent(p)
+        # TODO: do not save first policy for ones reward_fn?
         policies.append(policy)
 
         # save the policy
-        torch.save(policy, MODEL_DIR + 'model_' + str(i) + '.pt')
+        policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
 
     return policies
 
@@ -232,6 +250,9 @@ def load_from_dir(directory):
     policies = []
     files = os.listdir(directory)
     for file in files:
+        if (file == "model_0.pt"):
+            print("skipping: " + file)
+            continue
         policy = torch.load(directory + file)
         policies.append(policy)
     return policies
@@ -255,6 +276,7 @@ def main():
         # set up logging to file 
         TIME = datetime.now().strftime('%Y_%m_%d-%H-%M')
         LOG_DIR = 'logs/'
+        MODEL_DIR = 'models/models_' + TIME + '/'
         FILE_NAME = 'test' + TIME
         logging.basicConfig(level=logging.DEBUG,
                             format='%(message)s',
@@ -262,12 +284,17 @@ def main():
                             filename=LOG_DIR + FILE_NAME + '.log',
                             filemode='w')
         logger = logging.getLogger('curiosity.pt')
-        policies = collect_entropy_policies(env, iterations, T, TIME, logger)
+        policies = collect_entropy_policies(env, iterations, T, MODEL_DIR, logger)
     else:
         policies = load_from_dir(args.models_dir)
-   
-    average_p = execute_average_policy(env, policies, T)
 
+    # obtain average policy.
+    average_policy_state_dict = average_policies(policies)
+    exploration_policy = Policy()
+    exploration_policy.load_state_dict(average_policy_state_dict)
+    average_p = exploration_policy.execute(env, T)
+   
+    # average_p = execute_average_policy(env, policies, T)
 
     if args.collect:
         logger.debug('*************')
@@ -275,6 +302,11 @@ def main():
 
     print('*************')
     print(average_p)
+
+    actual_policy = ExplorePolicy(env, obs_dim, action_dim, exploration_policy, args.lr, args.gamma)
+    actual_policy.learn_policy(args.episodes, args.train_steps)
+    actual_policy.execute(T, render=True)
+    actual_policy.save(MODEL_DIR + learned_filename)
 
     env.close()
         
