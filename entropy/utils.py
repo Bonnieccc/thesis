@@ -1,4 +1,3 @@
-import gym
 import numpy as np
 import argparse
 
@@ -16,10 +15,10 @@ parser.add_argument('--episodes', type=int, default=5000, metavar='ep',
                     help='number of episodes per agent')
 parser.add_argument('--render', action='store_true',
                     help='render the environment')
-parser.add_argument('--models_dir', type=str, default='models_cheetah/models_cheetah2018_11_19-07-42/', metavar='N',
+parser.add_argument('--model_count', type=int, default=50, metavar='mc',
+                    help='number of models to train on entropy rewards')
+parser.add_argument('--models_dir', type=str, default='models_cheetah/models_cheetah2018_11_26-11-58/', metavar='N',
                     help='directory from which to load model policies')
-parser.add_argument('--learned_filename', type=str, default='learned/learned_policy.pt', metavar='ln',
-                    help='file to save learned policy')
 parser.add_argument('--env', type=str, default='HalfCheetah-v2', metavar='env',
                     help='the env to learn')
 args = parser.parse_args()
@@ -30,7 +29,6 @@ nx = 10
 nv = 4
 mc_obs_dim = 2
 mc_action_dim = 2
-mc_space_dim = nx*nv
 
 # Env variables for HalfCheetah
 cheetah_num_bins = 10
@@ -50,8 +48,8 @@ def discretize_value(value, bins):
 def get_state_bins():
     state_bins = []
     if args.env == "HalfCheetah-v2":
-        for i in range(obs_dim):
-            state_bins.append(discretize_range(-2, 2, num_bins))
+        for i in range(cheetah_obs_dim):
+            state_bins.append(discretize_range(-2, 2, cheetah_num_bins))
     elif args.env == "MountainCarContinuous-v0":
         state_bins = [
             # Cart position.
@@ -77,12 +75,12 @@ def get_space_dim():
     if args.env == "HalfCheetah-v2":
         return cheetah_space_dim
     elif args.env == "MountainCarContinuous-v0":
-        return mc_space_dim
+        return (nx, nv)
 
 
-state_bins = get_state_bins()
 action_dim = get_action_dim()
 obs_dim = get_obs_dim()
+state_bins = get_state_bins()
 space_dim = get_space_dim()
 
 num_states = []
@@ -97,7 +95,6 @@ def discretize_state(observation):
             break
         state.append(discretize_value(feature, state_bins[i]))
     return state
-
 
 
 

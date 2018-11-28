@@ -1,7 +1,7 @@
 import numpy as np
-import gym
 import random
 import time
+import os
 
 import torch
 import torch.nn as nn
@@ -163,5 +163,19 @@ class ExplorePolicy(nn.Module):
 
         self.env.close()
 
-    def save(self, filename):
-        torch.save(self, filename)
+    def save(self):
+
+        LEARNED_DIR = 'learned-' + args.env + '/'
+        if not os.path.exists(LEARNED_DIR):
+            os.mkdir(LEARNED_DIR)
+
+        name = [env_name, "lr"+self.lr, "eps"+self.eps]
+        name = LEARNED_DIR + "_".join(name)
+
+        torch.save(self, name)
+
+
+
+
+
+

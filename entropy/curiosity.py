@@ -50,7 +50,6 @@ def main():
     prng.seed(int(time.time())) # seed action space
 
     # Set up experiment variables.
-    iterations = 200
     T = 10000
 
     policies = load_from_dir(args.models_dir)
@@ -67,7 +66,7 @@ def main():
     actual_policy = ExplorePolicy(env, obs_dim, action_dim, exploration_policy, args.lr, args.gamma)
     actual_policy.learn_policy(args.episodes, args.train_steps)
     actual_policy.execute(T, render=True)
-    actual_policy.save(MODEL_DIR + learned_filename)
+    actual_policy.save()
 
     env.close()
         

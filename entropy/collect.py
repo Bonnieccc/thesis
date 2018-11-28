@@ -1,24 +1,21 @@
 import os
-import sys
 import time
 from datetime import datetime
 import logging
-import argparse
 
 import numpy as np
 import gym
 from gym.spaces import prng
 
-from entropy_policy import EntropyPolicy
-from curiosity import SimplePolicy
+from cheetah_entropy_policy import CheetahEntropyPolicy
+from cart_entropy_policy import CartEntropyPolicy
 import utils
 from utils import args
 
 if args.env == "HalfCheetah-v2":
-    Policy = EntropyPolicy
+    Policy = CheetahEntropyPolicy
 else:
-    Policy = SimplePolicy
-
+    Policy = CartEntropyPolicy
 
 def average_policies(policies):
     state_dict = policies[0].state_dict()
@@ -33,7 +30,9 @@ def average_policies(policies):
 
 
 def log_iteration(i, logger, p, reward_fn):
-    np.set_printoptions(suppress=True, threshold=utils.space_dim)
+
+    if type(utils.space_dim) == tuple:
+        np.set_printoptions(suppress=True, threshold=utils.space_dim)
 
     if i == 'average':
         logger.debug("*************************")
@@ -95,7 +94,6 @@ def main():
     prng.seed(int(time.time())) # seed action space
 
     # Set up experiment variables.
-    iterations = 50
     T = 10000
 
     # set up logging to file 
@@ -112,11 +110,15 @@ def main():
                         filemode='w')
     logger = logging.getLogger(args.env + '-curiosity.pt')
 
-    MODEL_DIR = 'models_' + args.env + '/models_' + TIME + '/'
+    MODEL_DIR = 'models-' + args.env + '/models_' + TIME + '/'
     if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)
 
-    policies = collect_entropy_policies(env, iterations, T, MODEL_DIR, logger)
+    # save metadata from the run. 
+    with open(MODEL_DIR + "metadata", "w") as metadata:
+        metadata.write("args: %s" % args)
+
+    policies = collect_entropy_policies(env, args.model_count, T, MODEL_DIR, logger)
 
     # # obtain average policy.
     average_policy_state_dict = utils.average_policies(policies)
