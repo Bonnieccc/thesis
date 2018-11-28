@@ -2,11 +2,7 @@
 # Code derived from: https://github.com/pytorch/examples/blob/master/reinforcement_learning/reinforce.py
 
 import os
-import sys
 import time
-from datetime import datetime
-import logging
-import argparse
 
 import numpy as np
 import gym
@@ -14,15 +10,15 @@ from gym.spaces import prng
 import torch
 from torch.distributions import Normal
 
-from entropy_policy import EntropyPolicy
+from cheetah_entropy_policy import CheetahEntropyPolicy
 from explore_policy import ExplorePolicy
 import utils
 from utils import args
 import collect
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
+# import matplotlib
+# matplotlib.use('TkAgg')
+# import matplotlib.pyplot as plt
 
 
 def select_step(probs, var):
@@ -54,7 +50,6 @@ def main():
     prng.seed(int(time.time())) # seed action space
 
     # Set up experiment variables.
-    iterations = 50
     T = 10000
 
     policies = load_from_dir(args.models_dir)
@@ -62,7 +57,7 @@ def main():
 
     # obtain average policy.
     average_policy_state_dict = collect.average_policies(policies)
-    exploration_policy = EntropyPolicy(env, args.gamma, episodes=0, train_steps=0)
+    exploration_policy = CheetahEntropyPolicy(env, args.gamma)
     exploration_policy.load_state_dict(average_policy_state_dict)
     average_p = exploration_policy.execute(T)
    
@@ -73,7 +68,7 @@ def main():
     actual_policy = ExplorePolicy(env, utils.obs_dim, utils.action_dim, exploration_policy, args.lr, args.gamma, args.eps)
     actual_policy.learn_policy(args.episodes, args.train_steps)
     actual_policy.execute(T, render=True)
-    actual_policy.save(learned_filename)
+    actual_policy.save()
 
     env.close()
 
