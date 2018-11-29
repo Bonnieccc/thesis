@@ -1,3 +1,5 @@
+# Collect entropy-based reward policies.
+
 import os
 import time
 from datetime import datetime
@@ -10,7 +12,8 @@ from gym.spaces import prng
 from cheetah_entropy_policy import CheetahEntropyPolicy
 from cart_entropy_policy import CartEntropyPolicy
 import utils
-from utils import args
+
+args = utils.get_args()
 
 if args.env == "HalfCheetah-v2":
     Policy = CheetahEntropyPolicy
@@ -28,10 +31,36 @@ def average_policies(policies):
 
     return state_dict
 
+def execute_average_policy(env, policies, T):
+    # run a simulation to see how the average policy behaves.
+    p = np.zeros(shape=(tuple(utils.num_states)))
+    state = env.reset()
+    for i in range(T):
+        # Compute average probability over action space for state.
+        probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
+        var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
+        for policy in policies:
+            prob, v = policy.get_probs(state)
+            probs += prob
+            var += v
+        probs /= len(policies)
+        var /= len(policies) # BUG?
+
+        # Select a step.
+        action = select_step(probs, var)
+        state, reward, done, _ = env.step(action)
+        p[tuple(utils.discretize_state(state))] += 1
+
+        if args.render:
+            env.render()
+        if done:
+            env.reset()
+
+    return p / float(T)
 
 def log_iteration(i, logger, p, reward_fn):
 
-    if type(utils.space_dim) == tuple:
+    if isinstance(utils.space_dim, int):
         np.set_printoptions(suppress=True, threshold=utils.space_dim)
 
     if i == 'average':
@@ -120,13 +149,10 @@ def main():
 
     policies = collect_entropy_policies(env, args.model_count, T, MODEL_DIR, logger)
 
-    # # obtain average policy.
-    average_policy_state_dict = utils.average_policies(policies)
-    exploration_policy.load_state_dict(average_policy_state_dict)
-    average_p = exploration_policy.execute(T)
+    # obtain average policy.
+    average_p = execute_average_policy(env, policies, T)
    
     log_iteration('average', logger, average_p, [])
-
     print('*************')
     print(np.reshape(average_p, utils.space_dim))
 
