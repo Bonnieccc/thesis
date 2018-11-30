@@ -34,8 +34,8 @@ mc_obs_dim = 2
 mc_action_dim = 2
 
 # env variables for Pendulum
-na = 6
-nv = 10
+pend_na = 6
+pend_nv = 10
 pendulum_obs_dim = 3
 pendulum_action_dim = 2
 
@@ -68,11 +68,11 @@ def get_state_bins():
         ]
     elif args.env == "Pendulum-v0":
         state_bins = [ # TODOTODO
-            # Angles
-            discretize_range(-1, 1, na), 
-            discretize_range(-1, 1, na), 
-            # Velocity
-            discretize_range(-8, 8, nv)
+            # Angles -- from 0 to 2pi?
+            discretize_range(0, 2*np.pi, pend_na), 
+            discretize_range(0, 2*np.pi, pend_na), 
+            # # Velocity
+            discretize_range(-8, 8, pend_nv)
         ]
     return state_bins
 
@@ -98,7 +98,19 @@ def get_space_dim():
     elif args.env == "MountainCarContinuous-v0":
         return (nx, nv)
     elif args.env == "Pendulum-v0":
-        return (nx, nx, nv)
+        return (pend_na, pend_nv)
+
+def get_num_states(obs_dim, state_bins):
+    num_states = []
+    for i in range(obs_dim):
+        num_states.append(len(state_bins[i]) + 1)
+
+    if args.env == "HalfCheetah-v2":
+        return num_states
+    elif args.env == "MountainCarContinuous-v0":
+        return num_states
+    elif args.env == "Pendulum-v0":
+        return (pend_na, pend_nv)
 
 
 action_dim = get_action_dim()
@@ -106,12 +118,23 @@ obs_dim = get_obs_dim()
 state_bins = get_state_bins()
 space_dim = get_space_dim()
 
-num_states = []
-for i in range(obs_dim):
-    num_states.append(len(state_bins[i]) + 1)
+num_states = get_num_states(obs_dim, state_bins)
+
+# to discretize observation from pendulum, first figure out what theta is
+# from the observation
+def pendulum_discretize_state(observation):
+    theta = np.arccos(observation[0])
+    vel = observation[2]
+  
+    state = [discretize_value(theta, state_bins[0]), discretize_value(vel, state_bins[1])]
+    return state
 
 # Discretize the observation features and reduce them to a single list.
 def discretize_state(observation):
+
+    if (args.env == "Pendulum-v0"):
+        return pendulum_discretize_state(observation)
+
     state = []
     for i, feature in enumerate(observation):
         if i >= obs_dim:

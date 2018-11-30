@@ -65,6 +65,8 @@ class CartEntropyPolicy(nn.Module):
 
     def learn_policy(self, reward_fn, episodes=1000, train_steps=1000):
 
+        print(reward_fn.shape)
+
         running_reward = 0
         for i_episode in range(episodes):
             state = self.env.reset()
@@ -89,9 +91,7 @@ class CartEntropyPolicy(nn.Module):
                 print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}'.format(
                     i_episode, ep_reward, running_reward))
 
-    def execute(self, T):
-        # p = np.zeros(shape=(utils.num_states[0],
-        #                    utils.num_states[1]))
+    def execute(self, T, render=False):
         p = np.zeros(shape=(tuple(utils.num_states)))
         state = self.env.reset()
         for t in range(T):  
@@ -99,9 +99,11 @@ class CartEntropyPolicy(nn.Module):
             state, reward, done, _ = self.env.step(action)
             p[tuple(utils.discretize_state(state))] += 1
 
+            if render:
+                self.env.render()
             if done:
                 self.env.reset()
-
+                
         return p/float(T)
 
     def save(self, filename):

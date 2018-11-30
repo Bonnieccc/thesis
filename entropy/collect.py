@@ -1,5 +1,7 @@
 # Collect entropy-based reward policies.
 
+# Changed from using all-1 reward to init to one-hot at: 2018_11_30-10-00
+
 import os
 import time
 from datetime import datetime
@@ -86,7 +88,10 @@ def grad_ent(pt):
 # Iteratively collect and learn T policies using policy gradients and a reward
 # function based on entropy.
 def collect_entropy_policies(env, iterations, T, MODEL_DIR, logger):
-    reward_fn = np.ones(shape=(tuple(utils.num_states)))
+    reward_fn = np.zeros(shape=(tuple(utils.num_states)))
+    state = utils.discretize_state(env.reset())
+    reward_fn[tuple(state)] = 1
+
     policies = []
     for i in range(iterations):
         # Learn policy that maximizes current reward function.
@@ -145,15 +150,17 @@ def main():
 
     # save metadata from the run. 
     with open(MODEL_DIR + "metadata", "w") as metadata:
-        metadata.write("args: %s" % args)
+        metadata.write("args: %s\n" % args)
+        metadata.write("num_states: %s\n" % utils.num_states)
+        metadata.write("state_bins: %s\n" % utils.state_bins)
 
     policies = collect_entropy_policies(env, args.model_count, T, MODEL_DIR, logger)
 
     # obtain average policy.
     average_policy_state_dict = average_policies(policies)
-    exploration_policy = Policy(env)
+    exploration_policy = Policy(env, args.gamma, utils.obs_dim, utils.action_dim)
     exploration_policy.load_state_dict(average_policy_state_dict)
-    average_p = exploration_policy.execute(env, T)
+    average_p = exploration_policy.execute(T, render=args.render)
 
    
     log_iteration('average', logger, average_p, [])
