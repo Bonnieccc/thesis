@@ -15,10 +15,10 @@ import utils
 
 args = utils.get_args()
 
+Policy = CartEntropyPolicy
 if args.env == "HalfCheetah-v2":
     Policy = CheetahEntropyPolicy
-else:
-    Policy = CartEntropyPolicy
+    
 
 def average_policies(policies):
     state_dict = policies[0].state_dict()
@@ -90,7 +90,7 @@ def collect_entropy_policies(env, iterations, T, MODEL_DIR, logger):
     policies = []
     for i in range(iterations):
         # Learn policy that maximizes current reward function.
-        policy = Policy(env, args.gamma)
+        policy = Policy(env, args.gamma, utils.obs_dim, utils.action_dim)
         policy.learn_policy(reward_fn, args.episodes, args.train_steps)
 
         # Get next distribution p by executing pi for T steps.
@@ -150,7 +150,11 @@ def main():
     policies = collect_entropy_policies(env, args.model_count, T, MODEL_DIR, logger)
 
     # obtain average policy.
-    average_p = execute_average_policy(env, policies, T)
+    average_policy_state_dict = average_policies(policies)
+    exploration_policy = Policy(env)
+    exploration_policy.load_state_dict(average_policy_state_dict)
+    average_p = exploration_policy.execute(env, T)
+
    
     log_iteration('average', logger, average_p, [])
     print('*************')

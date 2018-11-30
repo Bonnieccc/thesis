@@ -1,5 +1,6 @@
 import numpy as np
 import argparse
+import copy
 
 parser = argparse.ArgumentParser(description='PyTorch REINFORCE example')
 
@@ -17,18 +18,26 @@ parser.add_argument('--render', action='store_true',
                     help='render the environment')
 parser.add_argument('--model_count', type=int, default=50, metavar='mc',
                     help='number of models to train on entropy rewards')
-parser.add_argument('--models_dir', type=str, default='models_cheetah/models_cheetah2018_11_26-11-58/', metavar='N',
-                    help='directory from which to load model policies')
-parser.add_argument('--env', type=str, default='HalfCheetah-v2', metavar='env',
+parser.add_argument('--env', type=str, default='fake', metavar='env',
                     help='the env to learn')
+parser.add_argument('--models_dir', type=str, default='/', metavar='N',
+                    help='directory from which to load model policies')
 args = parser.parse_args()
 
+def get_args():
+    return copy.deepcopy(args)
 
 # Env variables for MountainCarContinuous
 nx = 10
 nv = 4
 mc_obs_dim = 2
 mc_action_dim = 2
+
+# env variables for Pendulum
+na = 6
+nv = 10
+pendulum_obs_dim = 3
+pendulum_action_dim = 2
 
 # Env variables for HalfCheetah
 cheetah_num_bins = 10
@@ -57,6 +66,14 @@ def get_state_bins():
             # Cart velocity.
             discretize_range(-0.07, 0.07, nv)
         ]
+    elif args.env == "Pendulum-v0":
+        state_bins = [ # TODOTODO
+            # Angles
+            discretize_range(-1, 1, na), 
+            discretize_range(-1, 1, na), 
+            # Velocity
+            discretize_range(-8, 8, nv)
+        ]
     return state_bins
 
 def get_obs_dim():
@@ -64,18 +81,24 @@ def get_obs_dim():
         return cheetah_obs_dim
     elif args.env == "MountainCarContinuous-v0":
         return mc_obs_dim
+    elif args.env == "Pendulum-v0":
+        return pendulum_obs_dim
 
 def get_action_dim():
     if args.env == "HalfCheetah-v2":
         return cheetah_action_dim
     elif args.env == "MountainCarContinuous-v0":
         return mc_action_dim
+    elif args.env == "Pendulum-v0":
+        return pendulum_action_dim
 
 def get_space_dim():
     if args.env == "HalfCheetah-v2":
         return cheetah_space_dim
     elif args.env == "MountainCarContinuous-v0":
         return (nx, nv)
+    elif args.env == "Pendulum-v0":
+        return (nx, nx, nv)
 
 
 action_dim = get_action_dim()

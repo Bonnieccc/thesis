@@ -9,10 +9,10 @@ from torch.distributions import Categorical
 import utils
 
 class CartEntropyPolicy(nn.Module):
-    def __init__(self, env, gamma):
+    def __init__(self, env, gamma, obs_dim, action_dim):
         super(CartEntropyPolicy, self).__init__()
-        self.affine1 = nn.Linear(2, 128)
-        self.affine2 = nn.Linear(128, 2)
+        self.affine1 = nn.Linear(obs_dim, 128)
+        self.affine2 = nn.Linear(128, action_dim)
 
         self.saved_log_probs = []
         self.rewards = []
@@ -90,8 +90,9 @@ class CartEntropyPolicy(nn.Module):
                     i_episode, ep_reward, running_reward))
 
     def execute(self, T):
-        p = np.zeros(shape=(utils.num_states[0],
-                           utils.num_states[1]))
+        # p = np.zeros(shape=(utils.num_states[0],
+        #                    utils.num_states[1]))
+        p = np.zeros(shape=(tuple(utils.num_states)))
         state = self.env.reset()
         for t in range(T):  
             action = self.select_action(state)
