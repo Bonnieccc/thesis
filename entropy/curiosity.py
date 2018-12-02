@@ -38,7 +38,6 @@ def select_step(probs):
 
 
 def load_from_dir(directory):
-    # for all
     policies = []
     files = os.listdir(directory)
     for file in sorted(files):
@@ -52,13 +51,23 @@ def load_from_dir(directory):
         policies.append(policy)
     return policies
 
-def get_next_file(directory, model_time, ext):
+def get_next_file(directory, model_time, ext, dot=".png"):
     i = 0
     fname = directory + model_time + ext
     while os.path.isfile(fname):
-        fname = directory + str(i) + '_' +  model_time + ext
+        fname = directory + model_time + ext + str(i) + dot
         i += 1
     return fname
+
+
+def average_p_and_entropy(env, policies, T, avg_runs=1, save_video_dir=''):
+    exploration_policy = collect.average_policies(env, policies)
+    average_p = exploration_policy.execute(T, render=(save_video_dir!=''), save_video_dir=save_video_dir)
+    for i in range(avg_runs-1):
+        average_p += exploration_policy.execute(T)
+    average_p /= float(avg_runs)
+    avg_entropy = scipy.stats.entropy(average_p.flatten())
+    return average_p, avg_entropy
 
 def main():
     # Suppress scientific notation.
@@ -70,38 +79,41 @@ def main():
     prng.seed(int(time.time())) # seed action space
 
     # Set up experiment variables.
-    T = 10000
-    avg_runs = 1
+    T = 1000
+    avg_runs = 10
 
     policies = load_from_dir(args.models_dir)
     
     times = []
     entropies = []
 
-    dist_times = []
-    distributions = []
+    x_dist_times = []
+    x_distributions = []
+
+    v_dist_times = []
+    v_distributions = []
     
     for t in range(1, len(policies)):
-        avg_state_dict = collect.average_policies(policies[:t])
-        exploration_policy = CartEntropyPolicy(env, args.gamma, utils.obs_dim, utils.action_dim)
-        exploration_policy.load_state_dict(avg_state_dict)
 
-        average_p = exploration_policy.execute(T)
-        for i in range(avg_runs-1):
-            average_p += exploration_policy.execute(T)
-        average_p /= float(avg_runs)
-        avg_entropy = scipy.stats.entropy(average_p.flatten())
+        avg_entropy = average_entropy(policies[:t], avg_runs)
         
         times.append(t)
         entropies.append(avg_entropy)
 
-        dist_times.append(t*np.ones(shape=average_p.shape))
-        distributions.append(average_p)
+        x_distribution = np.sum(average_p, axis=1)
+        v_distribution = np.sum(average_p, axis=0) 
 
+        x_dist_times.append(t*np.ones(shape=x_distribution.shape))
+        x_distributions.append(x_distribution)
+
+        v_dist_times.append(t*np.ones(shape=v_distribution.shape))
+        v_distributions.append(v_distribution)
+        
         print('---------------------')
         print("Average policies[:%d]" % t)
         print(average_p)
         print(avg_entropy)
+
 
     FIG_DIR = 'figs/' + args.env + '/'
     if not os.path.exists(FIG_DIR):
@@ -110,27 +122,36 @@ def main():
 
     # plot time vs. overall entropy
     # TODO: also plot max entropy
-    plt.figure(1)
-    plt.plot(times, entropies)
+    # plt.figure(1)
+    # plt.plot(times, entropies)
 
-    fname = get_next_file(FIG_DIR, model_time, "_entropy.png")
+    # fname = get_next_file(FIG_DIR, model_time, "entropy", ".png")
+
+    # plt.savefig(fname)
+    # plt.show()
+
+    # plot x distributions
+    plt.figure(2)
+    plt.scatter(x=x_dist_times, y=x_distributions, alpha=.1) 
+
+    fname = get_next_file(FIG_DIR, model_time, "x_scatter", ".png")
 
     plt.savefig(fname)
     plt.show()
 
-    # plot 
-    plt.figure(2)
-    plt.scatter(x=dist_times, y=distributions, alpha=.1) 
+    # plot v distributions
+    plt.figure(3)
+    plt.scatter(x=v_dist_times, y=v_distributions, alpha=.1) 
 
-    fname = get_next_file(FIG_DIR, model_time, "_scatter.png")
+    fname = get_next_file(FIG_DIR, model_time, "v_scatter", ".png")
 
     plt.savefig(fname)
     plt.show()
 
     # obtain global average policy.
-    average_policy_state_dict = collect.average_policies(policies)
-    exploration_policy = CartEntropyPolicy(env, args.gamma, utils.obs_dim, utils.action_dim)
-    exploration_policy.load_state_dict(average_policy_state_dict)
+    exploration_policy = collect.average_policies(env, policies)
+    # exploration_policy = CartEntropyPolicy(env, args.gamma, utils.obs_dim, utils.action_dim)
+    # exploration_policy.load_state_dict(average_policy_state_dict)
     average_p = exploration_policy.execute(T)
    
     print('*************')

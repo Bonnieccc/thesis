@@ -10,18 +10,25 @@ parser.add_argument('--lr', type=float, default=1e-4, metavar='lr',
                     help='learning rate')
 parser.add_argument('--eps', type=float, default=0.05, metavar='eps',
                     help='exploration rate')
-parser.add_argument('--train_steps', type=int, default=2000, metavar='ts',
+parser.add_argument('--train_steps', type=int, default=500, metavar='ts',
                     help='number of steps per episodes')
-parser.add_argument('--episodes', type=int, default=5000, metavar='ep',
+parser.add_argument('--episodes', type=int, default=100, metavar='ep',
                     help='number of episodes per agent')
-parser.add_argument('--render', action='store_true',
-                    help='render the environment')
-parser.add_argument('--model_count', type=int, default=50, metavar='mc',
+parser.add_argument('--epochs', type=int, default=50, metavar='epo',
                     help='number of models to train on entropy rewards')
+parser.add_argument('--T', type=int, default=1000, metavar='T',
+                    help='number of steps to roll out entropy policy')
 parser.add_argument('--env', type=str, default='fake', metavar='env',
                     help='the env to learn')
 parser.add_argument('--models_dir', type=str, default='/', metavar='N',
                     help='directory from which to load model policies')
+
+parser.add_argument('--collect_video', action='store_true',
+                    help='collect a video of the final policy')
+parser.add_argument('--render', action='store_true',
+                    help='render the environment')
+parser.add_argument('--use_avg_reward_fn', action='store_true',
+                    help='use averaged p as reward_fn')
 args = parser.parse_args()
 
 def get_args():
@@ -29,15 +36,15 @@ def get_args():
 
 # Env variables for MountainCarContinuous
 nx = 10
-nv = 4
+nv = 9
 mc_obs_dim = 2
-mc_action_dim = 2
+mc_action_dim = 3
 
 # env variables for Pendulum
 pend_na = 6
 pend_nv = 10
 pendulum_obs_dim = 3
-pendulum_action_dim = 2
+pendulum_action_dim = 3
 
 # Env variables for HalfCheetah
 cheetah_num_bins = 10
@@ -69,9 +76,9 @@ def get_state_bins():
     elif args.env == "Pendulum-v0":
         state_bins = [ # TODOTODO
             # Angles -- from 0 to 2pi?
-            discretize_range(0, 2*np.pi, pend_na), 
-            discretize_range(0, 2*np.pi, pend_na), 
-            # # Velocity
+            discretize_range(0, np.pi, pend_na), 
+            discretize_range(0, np.pi, pend_na), 
+            # Velocity
             discretize_range(-8, 8, pend_nv)
         ]
     return state_bins
@@ -119,6 +126,8 @@ state_bins = get_state_bins()
 space_dim = get_space_dim()
 
 num_states = get_num_states(obs_dim, state_bins)
+
+print(state_bins)
 
 # to discretize observation from pendulum, first figure out what theta is
 # from the observation
