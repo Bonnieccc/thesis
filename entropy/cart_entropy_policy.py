@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import random
 
 import torch
 import torch.nn as nn
@@ -168,6 +169,29 @@ class CartEntropyPolicy(nn.Module):
             if render:
                 self.env.render()
                 # time.sleep(.05)
+            if done:
+                break
+
+        self.env.close()
+        return p/float(T)
+
+    def execute_random(self, T, render=False):
+        p = np.zeros(shape=(tuple(utils.num_states)))
+
+        state = self.env.reset()
+        for t in range(T):  
+            action = 1
+            rando = random.random()
+            if (rando < 1/3):
+                action = -1
+            elif (rando < 2/3):
+                action = 0
+            state, reward, done, _ = self.env.step([action])
+            p[tuple(utils.discretize_state(state))] += 1
+            
+            if render:
+                env.render()
+                time.sleep(0.05)
             if done:
                 break
 

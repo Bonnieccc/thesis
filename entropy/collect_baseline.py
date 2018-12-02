@@ -42,40 +42,6 @@ Policy = CartEntropyPolicy
 if args.env == "HalfCheetah-v2":
     Policy = CheetahEntropyPolicy
 
-def select_action(probs, var):
-    m = Normal(probs.detach(), var) 
-    action = m.sample().numpy()[0]
-    return action
-
-def execute_average_policy(env, policies, T, render=False):
-    # run a simulation to see how the average policy behaves.
-    p = np.zeros(shape=(tuple(utils.num_states)))
-    state = env.reset()
-    for i in range(T):
-        # Compute average probability over action space for state.
-        probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
-        var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
-        for policy in policies:
-            prob = policy.get_probs(state)
-            probs += prob
-            # var += v
-            
-        probs /= len(policies)
-        # var /= len(policies)
-        action = select_action(probs, var)
-        
-        state, reward, done, _ = env.step(action)
-        p[tuple(utils.discretize_state(state))] += 1
-
-        if render and i % 10 == 0:
-            env.render()
-            time.sleep(.05)
-        if done:
-            env.reset()
-
-    env.close()
-    return p / float(T)
-
 def average_policies(env, policies):
     state_dict = policies[0].state_dict()
     for i in range(1, len(policies)):
@@ -89,7 +55,6 @@ def average_policies(env, policies):
     average_policy.load_state_dict(state_dict)
 
     return average_policy
-
 
 def log_iteration(i, logger, p, reward_fn):
 
@@ -142,11 +107,17 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR, logger):
     running_avg_p = np.zeros(shape=(tuple(utils.num_states)))
     running_avg_ent = 0
 
+    running_avg_p_baseline = np.zeros(shape=(tuple(utils.num_states)))
+    running_avg_ent_baseline = 0
+
     entropies = []
     average_ps = []
 
     running_avg_entropies = []
     running_avg_ps = []
+
+    running_avg_entropies_baseline = []
+    running_avg_ps_baseline = []
 
     policies = []
 
@@ -160,63 +131,59 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR, logger):
 
         # Get next distribution p by executing pi for T steps.
         p = policy.execute(T, render=False)
+        p_baseline = policy.execute_random(T)
 
-        log_iteration(i, logger, p, reward_fn)
-
-        print("p=")
-        print(np.reshape(p, utils.space_dim))
-        # print("reward_fn=")
-        # print(np.reshape(reward_fn, utils.space_dim))
+        # print("p=")
+        # print(np.reshape(p, utils.space_dim))
 
         # save the model
         policies.append(policy)
         policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
 
-        # model average policy.
-        # average_policy = average_policies(env, policies)
-
-        save_video_dir = ''
-        # if (i % 20 == 0): # This causes the pyplot library to fail for some reason
-        #     save_video_dir = MODEL_DIR+'videos/epoch' +str(i) +'/' 
-
-        average_p, round_avg_ent = curiosity.average_p_and_entropy(env, policies, T, save_video_dir=save_video_dir)
+        average_p, round_avg_ent = curiosity.average_p_and_entropy(env, policies, T)
+        # Save data from the round.
+        average_ps.append(average_p)
+        entropies.append(round_avg_ent)
         
         # update rewards.
-        reward_fn = grad_ent(p) # ORIGINAL/default
-        if utils.args.use_avg_reward_fn:
-            reward_fn = grad_ent(average_p)
+        reward_fn = grad_ent(p)
         
-        print("average_p[0:%d]=" % i)
-        print(np.reshape(average_p, utils.space_dim))
+        # print("average_p[0:%d]=" % i)
+        # print(np.reshape(average_p, utils.space_dim))
+        # print("avg_entropy[0:%d] = %f" % (i, round_avg_ent))
 
-        print("avg_entropy[0:%d] = %f" % (i, round_avg_ent))
-
-        # alt_avg_p = execute_average_policy(env, policies, T, render=False)
-        # print("alt avg_entropy %d = %f" % (i, scipy.stats.entropy(alt_avg_p.flatten())))
-        
         # Update running average.
         running_avg_ent = running_avg_ent * (i)/float(i+1) + round_avg_ent/float(i+1)
         running_avg_p = running_avg_p * (i)/float(i+1) + average_p/float(i+1)
-
-        # Save data from the round.
-        entropies.append(round_avg_ent)
-        average_ps.append(average_p)
-
-        # Save the new running averages.
         running_avg_entropies.append(running_avg_ent)
-        running_avg_ps.append(running_avg_p)       
+        running_avg_ps.append(running_avg_p)     
+
+
+        running_avg_ent_baseline = running_avg_ent_baseline * (i)/float(i+1) + scipy.stats.entropy(p_baseline.flatten())/float(i+1)
+        running_avg_p_baseline = running_avg_p_baseline * (i)/float(i+1) + p_baseline/float(i+1)
+        
+        running_avg_entropies_baseline.append(running_avg_ent_baseline)
+        running_avg_ps_baseline.append(running_avg_p_baseline)     
+
 
         print("running_avg_ent = %s" % running_avg_ent)
         print("running_avg_p =") 
         print(running_avg_p)
-        print("entropy: %s" % scipy.stats.entropy(running_avg_p.flatten()))
+
+        print("..........")
+
+        print("running_avg_ent_baseline = %s" % running_avg_ent_baseline)
+        print("running_avg_p_baseline =") 
+        print(running_avg_p_baseline)
+
         print("----------------------")
 
         if i % 10 == 0 and args.render:
             avg_policy = average_policies(env, policies)
             avg_policy.execute(T, render=True)
 
-    return policies, running_avg_entropies, entropies, running_avg_ps, average_ps
+    return policies, running_avg_entropies, entropies, running_avg_ps, average_ps, running_avg_ps_baseline, running_avg_entropies_baseline
+
 
 def main():
 
@@ -254,16 +221,20 @@ def main():
         metadata.write("num_states: %s\n" % str(utils.num_states))
         metadata.write("state_bins: %s\n" % utils.state_bins)
 
-    policies, running_avg_entropies, entropies, running_avg_ps, average_ps = collect_entropy_policies(env, args.epochs, args.T, MODEL_DIR, logger)
-    plotting.generate_figures(args.env, MODEL_DIR, running_avg_entropies, entropies, running_avg_ps, average_ps)
+    policies, \
+    running_avg_entropies, entropies, \
+    running_avg_ps, average_ps, \
+    running_avg_ps_baseline, running_avg_entropies_baseline = collect_entropy_policies(env, args.epochs, args.T, MODEL_DIR, logger)
+    
+    plotting.generate_figures(args.env, MODEL_DIR, \
+        running_avg_entropies, entropies, running_avg_ps, average_ps, \
+        running_avg_ps_baseline, running_avg_entropies_baseline)
 
     exploration_policy = average_policies(env, policies)
     if (args.collect_video):
         MODEL_DIR = ''
     # average_p = exploration_policy.execute(args.T, render=True, save_video_dir=MODEL_DIR+'videos/epoch_' + str(args.epochs) + '/')
     overall_avg_ent = scipy.stats.entropy(average_p.flatten())
-
-    # average_p = execute_average_policy(env, policies, args.T, render=True)
 
     log_iteration('average', logger, average_p, [])
     print('*************')
