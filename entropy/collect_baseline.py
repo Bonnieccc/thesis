@@ -1,7 +1,6 @@
 # Collect entropy-based reward policies.
 
 # Changed from using all-1 reward to init to one-hot at: 2018_11_30-10-00
-# TODO: weights initialization?
 
 # python collect.py --env="MountainCarContinuous-v0" --T=1000 --train_steps=400 --episodes=300 --epochs=50
 
@@ -35,6 +34,22 @@ import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 from mpl_toolkits.mplot3d import Axes3D
 
+from itertools import islice
+
+def window(seq, n=2):
+    "Returns a sliding window (of width n) over data from the iterable"
+    "   s -> (s0,s1,...s[n-1]), (s1,s2,...,sn), ...                   "
+    it = iter(seq)
+    result = tuple(islice(it, n))
+    if len(result) == n:
+        yield result    
+    for elem in it:
+        result = result[1:] + (elem,)
+        yield result
+
+def moving_averages(values, size):
+    for selection in window(values, size):
+        yield sum(selection) / size
 
 args = utils.get_args()
 
@@ -42,6 +57,7 @@ Policy = CartEntropyPolicy
 if args.env == "HalfCheetah-v2":
     Policy = CheetahEntropyPolicy
 
+# Average the weights of all the policies. Use to intialize a new Policy object.
 def average_policies(env, policies):
     state_dict = policies[0].state_dict()
     for i in range(1, len(policies)):
@@ -51,66 +67,58 @@ def average_policies(env, policies):
     for k, v in state_dict.items():
         state_dict[k] /= float(len(policies))
      # obtain average policy.
-    average_policy = Policy(env, args.gamma, utils.obs_dim, utils.action_dim)
+    average_policy = Policy(env, args.gamma, args.lr, utils.obs_dim, utils.action_dim)
     average_policy.load_state_dict(state_dict)
 
     return average_policy
 
-def log_iteration(i, logger, p, reward_fn):
-
-    if isinstance(utils.space_dim, int):
-        np.set_printoptions(suppress=True, threshold=utils.space_dim)
-
-    if i == 'average':
-        logger.debug("*************************")
-
-    logger.debug('Iteration: ' + str(i))
-    logger.debug('p' + str(i) + ':')
-    logger.debug(np.reshape(p, utils.space_dim))
-
-    if i != 'average':
-        logger.debug('reward_fn' + str(i) + ':')
-        logger.debug(np.reshape(reward_fn, utils.space_dim))
-
-    np.set_printoptions(suppress=True, threshold=100, edgeitems=100)
-
-
+# Compute the gradient of the entropy of ditribution p.
 def grad_ent(pt):
     grad_p = -np.log(pt)
     grad_p[grad_p > 100] = 1000
     return grad_p
 
-def init_state(env_str):
-    if args.env == "Pendulum-v0":
-        return [np.pi, 0] # WORKING HERE
-    elif args.env == "MountainCarContinuous-v0":
+# Get the initial zero-state for the env.
+def init_state(env):
+    if env == "Pendulum-v0":
+        return [np.pi, 0] 
+    elif env == "MountainCarContinuous-v0":
         return [-0.50, 0]
 
-# Main loop of maximum entropy program. WORKING HERE
-# Iteratively collect and learn T policies using policy gradients and a reward
-# function based on entropy.
-def collect_entropy_policies(env, epochs, T, MODEL_DIR, logger):
-    reward_fn = -1*np.ones(shape=(tuple(utils.num_states)))
+# Main loop of maximum entropy program. Iteratively collect 
+# and learn T policies using policy gradients and a reward function 
+# based on entropy.
+def collect_entropy_policies(env, epochs, T, MODEL_DIR):
+
+    reward_fn = np.zeros(shape=(tuple(utils.num_states)))
 
     # set initial state to base, motionless state.
     seed = []
     if args.env == "Pendulum-v0":
-        env.env.state = [np.pi, 0] # WORKING HERE
+        env.env.state = [np.pi, 0]
         seed = env.env._get_obs()
     elif args.env == "MountainCarContinuous-v0":
         env.env.state = [-0.50, 0]
         seed = env.env.state
 
-    print(tuple(utils.discretize_state(seed)))
     reward_fn[tuple(utils.discretize_state(seed))] = 1
 
     running_avg_p = np.zeros(shape=(tuple(utils.num_states)))
     running_avg_ent = 0
+    window_running_avg_p = np.zeros(shape=(tuple(utils.num_states)))
+    window_running_avg_ent = 0
 
     running_avg_p_baseline = np.zeros(shape=(tuple(utils.num_states)))
     running_avg_ent_baseline = 0
+    window_running_avg_p_baseline = np.zeros(shape=(tuple(utils.num_states)))
+    window_running_avg_ent_baseline = 0
 
+    baseline_entropies = []
+    baseline_ps = []
     entropies = []
+    ps = []
+
+    average_entropies = []
     average_ps = []
 
     running_avg_entropies = []
@@ -119,70 +127,118 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR, logger):
     running_avg_entropies_baseline = []
     running_avg_ps_baseline = []
 
+    window_running_avg_ents = []
+    window_running_avg_ps = []
+    window_running_avg_ents_baseline = []
+    window_running_avg_ps_baseline = []
+
     policies = []
+    initial_state = init_state(args.env)
 
     for i in range(epochs):
 
-        env.env.state = init_state(args.env)
-
         # Learn policy that maximizes current reward function.
-        policy = Policy(env, args.gamma, utils.obs_dim, utils.action_dim)
-        policy.learn_policy(reward_fn, args.episodes, args.train_steps)
+        policy = Policy(env, args.gamma, args.lr, utils.obs_dim, utils.action_dim) 
+        policy.learn_policy(reward_fn, initial_state, args.episodes, args.train_steps)
+        policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
+        policies.append(policy)
+
+        # update initial state - execute 
 
         # Get next distribution p by executing pi for T steps.
         p = policy.execute(T, render=False)
-        p_baseline = policy.execute_random(T)
-
-        # print("p=")
-        # print(np.reshape(p, utils.space_dim))
-
-        # save the model
-        policies.append(policy)
-        policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
-
-        average_p, round_avg_ent = curiosity.average_p_and_entropy(env, policies, T)
-        # Save data from the round.
-        average_ps.append(average_p)
-        entropies.append(round_avg_ent)
         
-        # update rewards.
+        average_over_rounds = 10
+        p_baseline = policy.execute_random(T, render=args.render, save_video_dir='cmp_videos/'+MODEL_DIR+'baseline_'+ str(i)+'/') # args.episodes?
+        round_entropy_baseline = scipy.stats.entropy(p_baseline.flatten())
+        for av in range(average_over_rounds - 1):
+            next_p_baseline = policy.execute_random(T, render=args.render, save_video_dir='cmp_videos/'+MODEL_DIR+'baseline_'+ str(i)+'/') # args.episodes?
+            p_baseline += next_p_baseline
+            # print(scipy.stats.entropy(next_p_baseline.flatten()))
+            round_entropy_baseline += scipy.stats.entropy(next_p_baseline.flatten())
+        p_baseline /= float(average_over_rounds)
+        round_entropy_baseline /= float(average_over_rounds) # running average of the entropy
+        
+        # note: the entropy is p_baseline is not the same as the computed avg entropy
+        # print("baseline compare:")
+        # print(round_entropy_baseline) # running average
+        # print(scipy.stats.entropy(p_baseline.flatten())) # entropy of final
+
         reward_fn = grad_ent(p)
-        
-        # print("average_p[0:%d]=" % i)
-        # print(np.reshape(average_p, utils.space_dim))
-        # print("avg_entropy[0:%d] = %f" % (i, round_avg_ent))
 
+        round_entropy = scipy.stats.entropy(p.flatten())
+        entropies.append(round_entropy)
+        baseline_entropies.append(round_entropy_baseline)
+        ps.append(p)
+        baseline_ps.append(p_baseline)
+
+        # Execute the cumulative average policy thus far.
+        # Estimate distribution and entropy.
+        # average_p, round_avg_ent = curiosity.average_p_and_entropy(env, policies, T, avg_runs=average_over_rounds, render=args.render, save_video_dir='cmp_videos/'+MODEL_DIR+'entropy_'+ str(i)+'/')
+        average_p, round_avg_ent, initial_state = curiosity.execute_average_policy(env, policies, T, avg_runs=average_over_rounds)
+
+        # TODO: Use this to update initial_state
+
+        average_ps.append(average_p)
+        average_entropies.append(round_avg_ent)
+        
         # Update running average.
+        window = 5
+        if (i < window): # add normally
+            window_running_avg_ent = window_running_avg_ent * (i)/float(i+1) + round_avg_ent/float(i+1)
+            window_running_avg_p = window_running_avg_ent * (i)/float(i+1) + average_p/float(i+1)
+            window_running_avg_ent_baseline = window_running_avg_ent_baseline * (i)/float(i+1) + round_entropy_baseline/float(i+1)
+            window_running_avg_p_baseline = window_running_avg_p_baseline * (i)/float(i+1) + p_baseline/float(i+1)
+
+        else:
+            window_running_avg_ent = window_running_avg_ent + round_avg_ent/float(window) - average_entropies[i-5]/float(window)
+            window_running_avg_p = window_running_avg_p + average_p/float(window) - average_ps[i-5]/float(window)
+            
+            window_running_avg_ent_baseline = window_running_avg_ent_baseline + round_entropy_baseline/float(window) - baseline_entropies[i-5]/float(window)
+            window_running_avg_p_baseline = window_running_avg_p_baseline + p_baseline/float(window) - baseline_ps[i-5]/float(window)
+        
+
         running_avg_ent = running_avg_ent * (i)/float(i+1) + round_avg_ent/float(i+1)
         running_avg_p = running_avg_p * (i)/float(i+1) + average_p/float(i+1)
         running_avg_entropies.append(running_avg_ent)
         running_avg_ps.append(running_avg_p)     
 
-
-        running_avg_ent_baseline = running_avg_ent_baseline * (i)/float(i+1) + scipy.stats.entropy(p_baseline.flatten())/float(i+1)
+        # Update baseline running averages.
+        running_avg_ent_baseline = running_avg_ent_baseline * (i)/float(i+1) + round_entropy_baseline/float(i+1)
         running_avg_p_baseline = running_avg_p_baseline * (i)/float(i+1) + p_baseline/float(i+1)
-        
         running_avg_entropies_baseline.append(running_avg_ent_baseline)
-        running_avg_ps_baseline.append(running_avg_p_baseline)     
+        running_avg_ps_baseline.append(running_avg_p_baseline) 
 
+        window_running_avg_ents.append(window_running_avg_ent)
+        window_running_avg_ps.append(window_running_avg_p)
+        window_running_avg_ents_baseline.append(window_running_avg_ent_baseline)
+        window_running_avg_ps_baseline.append(window_running_avg_p_baseline)
 
+        print("round_avg_ent[%d] = %f" % (i, round_avg_ent))
         print("running_avg_ent = %s" % running_avg_ent)
-        print("running_avg_p =") 
-        print(running_avg_p)
+        print("window_running_avg_ent = %s" % window_running_avg_ent)
+        # print("running_avg_p =") 
+        # print(running_avg_p)
 
         print("..........")
 
+        print("round_entropy_baseline[%d] = %f" % (i, round_entropy_baseline))
         print("running_avg_ent_baseline = %s" % running_avg_ent_baseline)
-        print("running_avg_p_baseline =") 
-        print(running_avg_p_baseline)
+        print("window_running_avg_ent_baseline = %s" % window_running_avg_ent_baseline)
+        # print("running_avg_p_baseline =") 
+        # print(running_avg_p_baseline)
 
         print("----------------------")
 
-        if i % 10 == 0 and args.render:
-            avg_policy = average_policies(env, policies)
-            avg_policy.execute(T, render=True)
+        plotting.heatmap(running_avg_p, i)
 
-    return policies, running_avg_entropies, entropies, running_avg_ps, average_ps, running_avg_ps_baseline, running_avg_entropies_baseline
+    plotting.heatmap4(running_avg_ps)
+    # plotting.smear_lines(running_avg_ps, running_avg_ps_baseline)
+    plotting.running_average_entropy(running_avg_entropies, running_avg_entropies_baseline)
+    plotting.running_average_entropy_window(window_running_avg_ents, window_running_avg_ents_baseline, window)
+    # plotting.difference_heatmap(running_avg_ps, running_avg_ps_baseline)
+
+    return policies
 
 
 def main():
@@ -197,20 +253,7 @@ def main():
     env.seed(int(time.time())) # seed environment
     prng.seed(int(time.time())) # seed action space
 
-    # Set up logging to file 
     TIME = datetime.now().strftime('%Y_%m_%d-%H-%M')
-    LOG_DIR = 'logs-' + args.env + '/'
-    if not os.path.exists(LOG_DIR):
-        os.mkdir(LOG_DIR)
-
-    FILE_NAME = 'test' + TIME
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(message)s',
-                        datefmt='%m-%d %H:%M',
-                        filename=LOG_DIR + FILE_NAME + '.log',
-                        filemode='w')
-    logger = logging.getLogger(args.env + '-curiosity.pt')
-
     MODEL_DIR = 'models-' + args.env + '/models_' + TIME + '/'
     if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)
@@ -221,14 +264,12 @@ def main():
         metadata.write("num_states: %s\n" % str(utils.num_states))
         metadata.write("state_bins: %s\n" % utils.state_bins)
 
-    policies, \
-    running_avg_entropies, entropies, \
-    running_avg_ps, average_ps, \
-    running_avg_ps_baseline, running_avg_entropies_baseline = collect_entropy_policies(env, args.epochs, args.T, MODEL_DIR, logger)
-    
-    plotting.generate_figures(args.env, MODEL_DIR, \
-        running_avg_entropies, entropies, running_avg_ps, average_ps, \
-        running_avg_ps_baseline, running_avg_entropies_baseline)
+    plotting.FIG_DIR = 'figs/' + args.env + '/'
+    if not os.path.exists(plotting.FIG_DIR):
+        os.makedirs(plotting.FIG_DIR)
+    plotting.model_time = TIME
+
+    policies = collect_entropy_policies(env, args.epochs, args.T, MODEL_DIR)
 
     exploration_policy = average_policies(env, policies)
     if (args.collect_video):
@@ -236,7 +277,6 @@ def main():
     # average_p = exploration_policy.execute(args.T, render=True, save_video_dir=MODEL_DIR+'videos/epoch_' + str(args.epochs) + '/')
     overall_avg_ent = scipy.stats.entropy(average_p.flatten())
 
-    log_iteration('average', logger, average_p, [])
     print('*************')
     print(np.reshape(average_p, utils.space_dim))
 

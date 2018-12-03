@@ -6,7 +6,7 @@ parser = argparse.ArgumentParser(description='PyTorch REINFORCE example')
 
 parser.add_argument('--gamma', type=float, default=0.99, metavar='g',
                     help='learning rate')
-parser.add_argument('--lr', type=float, default=1e-4, metavar='lr',
+parser.add_argument('--lr', type=float, default=1e-3, metavar='lr',
                     help='learning rate')
 parser.add_argument('--eps', type=float, default=0.05, metavar='eps',
                     help='exploration rate')
@@ -39,7 +39,7 @@ nx = 10
 nv = 9
 mc_obs_dim = 2
 mc_action_dim = 3
-
+ 
 # env variables for Pendulum
 pend_na = 6
 pend_nv = 10
@@ -152,4 +152,16 @@ def discretize_state(observation):
     return state
 
 
+
+    # window = 5
+    # test_moving_avgs = []
+    # for i in range(window-1):
+    #     test_moving_avgs.append(entropies[i])
+
+    # for avg in moving_averages(average_ps, len(average_ps)):
+    #     test_moving_avgs.append(avg)
+
+    # print(entropies)
+    # print(running_avg_ps[len(running_avg_ps)-1])
+    # print(test_moving_avgs)
 

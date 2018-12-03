@@ -26,7 +26,6 @@ import curiosity
 import plotting
 
 import torch
-from torch.distributions import Normal
 import random
 
 import matplotlib
@@ -42,40 +41,6 @@ Policy = CartEntropyPolicy
 if args.env == "HalfCheetah-v2":
     Policy = CheetahEntropyPolicy
 
-def select_action(probs, var):
-    m = Normal(probs.detach(), var) 
-    action = m.sample().numpy()[0]
-    return action
-
-def execute_average_policy(env, policies, T, render=False):
-    # run a simulation to see how the average policy behaves.
-    p = np.zeros(shape=(tuple(utils.num_states)))
-    state = env.reset()
-    for i in range(T):
-        # Compute average probability over action space for state.
-        probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
-        var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
-        for policy in policies:
-            prob = policy.get_probs(state)
-            probs += prob
-            # var += v
-            
-        probs /= len(policies)
-        # var /= len(policies)
-        action = select_action(probs, var)
-        
-        state, reward, done, _ = env.step(action)
-        p[tuple(utils.discretize_state(state))] += 1
-
-        if render and i % 10 == 0:
-            env.render()
-            time.sleep(.05)
-        if done:
-            env.reset()
-
-    env.close()
-    return p / float(T)
-
 def average_policies(env, policies):
     state_dict = policies[0].state_dict()
     for i in range(1, len(policies)):
@@ -89,7 +54,6 @@ def average_policies(env, policies):
     average_policy.load_state_dict(state_dict)
 
     return average_policy
-
 
 def log_iteration(i, logger, p, reward_fn):
 
@@ -125,8 +89,9 @@ def init_state(env_str):
 # Iteratively collect and learn T policies using policy gradients and a reward
 # function based on entropy.
 def collect_entropy_policies(env, epochs, T, MODEL_DIR, logger):
-    reward_fn = -1*np.ones(shape=(tuple(utils.num_states)))
-
+    # reward_fn = -1*np.ones(shape=(tuple(utils.num_states)))
+    reward_fn = np.zeros(shape=(tuple(utils.num_states)))
+    
     # set initial state to base, motionless state.
     seed = []
     if args.env == "Pendulum-v0":
@@ -191,7 +156,7 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR, logger):
 
         print("avg_entropy[0:%d] = %f" % (i, round_avg_ent))
 
-        # alt_avg_p = execute_average_policy(env, policies, T, render=False)
+        # alt_avg_p = curiosity.execute_average_policy(env, policies, T, render=False)
         # print("alt avg_entropy %d = %f" % (i, scipy.stats.entropy(alt_avg_p.flatten())))
         
         # Update running average.
@@ -263,7 +228,7 @@ def main():
     # average_p = exploration_policy.execute(args.T, render=True, save_video_dir=MODEL_DIR+'videos/epoch_' + str(args.epochs) + '/')
     overall_avg_ent = scipy.stats.entropy(average_p.flatten())
 
-    # average_p = execute_average_policy(env, policies, args.T, render=True)
+    # average_p = curiosity.execute_average_policy(env, policies, args.T, render=True)
 
     log_iteration('average', logger, average_p, [])
     print('*************')

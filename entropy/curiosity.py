@@ -8,9 +8,8 @@
 import os
 import sys
 import time
-from datetime import datetime
-import json
 
+import random
 import numpy as np
 import scipy.stats
 import gym
@@ -24,26 +23,21 @@ from cart_entropy_policy import CartEntropyPolicy
 import utils
 import collect
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-
 args = utils.get_args()
 
-
-def select_step(probs):
+def select_action(probs):
     m = Categorical(probs)
     action = m.sample()
-    return action.item() - 0.5
-
+    if (action.item() == 1):
+        return [0]
+    elif (action.item() == 0):
+        return [-1]
+    return [1]
 
 def load_from_dir(directory):
     policies = []
     files = os.listdir(directory)
     for file in sorted(files):
-        # if (file == "model_000.pt"):
-        #     print("skipping: " + file)
-        #     continue
         if (file == "metadata"):
             print("skipping: " + file)
             continue
@@ -59,15 +53,77 @@ def get_next_file(directory, model_time, ext, dot=".png"):
         i += 1
     return fname
 
+def execute_average_policy(env, policies, T, avg_runs=1, render=False):
+    # run a simulation to see how the average policy behaves.
 
-def average_p_and_entropy(env, policies, T, avg_runs=1, save_video_dir=''):
-    exploration_policy = collect.average_policies(env, policies)
-    average_p = exploration_policy.execute(T, render=(save_video_dir!=''), save_video_dir=save_video_dir)
-    for i in range(avg_runs-1):
-        average_p += exploration_policy.execute(T)
+    random_T = np.floor(random.random()*T)
+    
+    average_p = np.zeros(shape=(tuple(utils.num_states)))
+    avg_entropy = 0
+    random_initial_state = []
+
+    for i in range(avg_runs):
+        # unroll for T steps and compute p
+        p = np.zeros(shape=(tuple(utils.num_states)))
+        state = env.reset()
+        for i in range(T):
+            # Compute average probability over action space for state.
+            probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
+            var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
+            for policy in policies:
+                prob = policy.get_probs(state)
+                probs += prob
+            probs /= len(policies)
+            action = select_action(probs)
+            
+            state, reward, done, _ = env.step(action)
+            p[tuple(utils.discretize_state(state))] += 1
+            if (i == random_T):
+                random_initial_state = state
+                print(random_initial_state)
+
+            if render and i % 10 == 0:
+                env.render()
+                time.sleep(.05)
+            if done:
+                env.reset()
+
+        p /= float(T)
+        average_p += p
+        avg_entropy += scipy.stats.entropy(average_p.flatten())
+
+    env.close()
     average_p /= float(avg_runs)
-    avg_entropy = scipy.stats.entropy(average_p.flatten())
-    return average_p, avg_entropy
+
+    avg_entropy /= float(avg_runs) # running average of the entropy 
+    entropy_of_final = scipy.stats.entropy(average_p.flatten())
+
+    # print("compare:")
+    # print(avg_entropy) # running entropy
+    # print(entropy_of_final) # entropy of the average distribution
+
+    return average_p, avg_entropy, random_initial_state
+
+
+def average_p_and_entropy(env, policies, T, avg_runs=1, render=False, save_video_dir=''):
+    exploration_policy = collect.average_policies(env, policies)
+    average_p = exploration_policy.execute(T, render=render, save_video_dir=save_video_dir)
+    average_ent = scipy.stats.entropy(average_p.flatten())
+    for i in range(avg_runs-1):
+        p = exploration_policy.execute(T)
+        average_p += p
+        average_ent += scipy.stats.entropy(p.flatten())
+        # print(scipy.stats.entropy(p.flatten()))
+    average_p /= float(avg_runs) 
+    average_ent /= float(avg_runs) # 
+    entropy_of_final = scipy.stats.entropy(average_p.flatten())
+
+    # print("entropy compare: ")
+    # print(average_ent) # running entropy
+    # print(entropy_of_final) # entropy of final
+
+    # return average_p, avg_entropy
+    return average_p, average_ent
 
 def main():
     # Suppress scientific notation.
@@ -95,63 +151,15 @@ def main():
     
     for t in range(1, len(policies)):
 
-        avg_entropy = average_entropy(policies[:t], avg_runs)
-        
-        times.append(t)
-        entropies.append(avg_entropy)
-
-        x_distribution = np.sum(average_p, axis=1)
-        v_distribution = np.sum(average_p, axis=0) 
-
-        x_dist_times.append(t*np.ones(shape=x_distribution.shape))
-        x_distributions.append(x_distribution)
-
-        v_dist_times.append(t*np.ones(shape=v_distribution.shape))
-        v_distributions.append(v_distribution)
+        average_p, avg_entropy = average_p_and_entropy(policies[:t], avg_runs)
         
         print('---------------------')
         print("Average policies[:%d]" % t)
         print(average_p)
         print(avg_entropy)
 
-
-    FIG_DIR = 'figs/' + args.env + '/'
-    if not os.path.exists(FIG_DIR):
-        os.makedirs(FIG_DIR)
-    model_time = args.models_dir.split('/')[1]
-
-    # plot time vs. overall entropy
-    # TODO: also plot max entropy
-    # plt.figure(1)
-    # plt.plot(times, entropies)
-
-    # fname = get_next_file(FIG_DIR, model_time, "entropy", ".png")
-
-    # plt.savefig(fname)
-    # plt.show()
-
-    # plot x distributions
-    plt.figure(2)
-    plt.scatter(x=x_dist_times, y=x_distributions, alpha=.1) 
-
-    fname = get_next_file(FIG_DIR, model_time, "x_scatter", ".png")
-
-    plt.savefig(fname)
-    plt.show()
-
-    # plot v distributions
-    plt.figure(3)
-    plt.scatter(x=v_dist_times, y=v_distributions, alpha=.1) 
-
-    fname = get_next_file(FIG_DIR, model_time, "v_scatter", ".png")
-
-    plt.savefig(fname)
-    plt.show()
-
     # obtain global average policy.
     exploration_policy = collect.average_policies(env, policies)
-    # exploration_policy = CartEntropyPolicy(env, args.gamma, utils.obs_dim, utils.action_dim)
-    # exploration_policy.load_state_dict(average_policy_state_dict)
     average_p = exploration_policy.execute(T)
    
     print('*************')

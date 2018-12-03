@@ -16,8 +16,168 @@ import matplotlib.mlab as mlab
 from mpl_toolkits.mplot3d import Axes3D
 
 
-def three_d_histogram(running_avg_ps, FIG_DIR, model_time):
+# By default, the plotter saves figures to the directory where it's executed.
+FIG_DIR = ''
+model_time = ''
+
+def running_average_entropy(running_avg_entropies, running_avg_entropies_baseline):
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg", ".png")
+    plt.figure(1)
+    plt.plot(np.arange(len(running_avg_entropies)), running_avg_entropies)
+    plt.plot(np.arange(len(running_avg_entropies_baseline)), running_avg_entropies_baseline)
+    plt.legend(["Entropy", "Random"])
+    plt.xlabel("t")
+    plt.ylabel("Running average entropy of cumulative policy")
+    plt.title("Policy Entropy over Time")
+    plt.savefig(fname)
+    plt.show()
+
+def running_average_entropy_window(window_running_avg_ents, window_running_avg_ents_baseline, window):
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_window", ".png")
+    plt.figure(2)
+    plt.plot(np.arange(len(window_running_avg_ents)), window_running_avg_ents)
+    plt.plot(np.arange(len(window_running_avg_ents_baseline)), window_running_avg_ents_baseline)
+    plt.legend(["Entropy", "Random"])
+    plt.xlabel("t")
+    plt.ylabel("Running avg entropy")
+    plt.title("Policy entropy over time, window = %d" % window)
+    plt.savefig(fname)
+    plt.show()
+ 
+def smear_lines(running_avg_ps, running_avg_ps_baseline):
+    # want to plot the running_avg_p x_distribution over time
+    plt.figure(3)
+
+    smear_x = plt.subplot(211)
+    smear_x.set_xlabel('t')
+    smear_x.set_ylabel('Policy distribution over x')
+
+    smear_v = plt.subplot(212)
+    smear_v.set_xlabel('t')
+    smear_v.set_ylabel('Policy distribution over v')
+
+    for t in range(len(running_avg_ps)):
+        running_avg_p = running_avg_ps[t]
+        running_avg_p_baseline = running_avg_ps_baseline[t]
+        x_distribution = np.sum(running_avg_p, axis=1)
+        x_distribution_baseline = np.sum(running_avg_p_baseline, axis=1)
+        v_distribution = np.sum(running_avg_p, axis=0)
+        v_distribution_baseline = np.sum(running_avg_p_baseline, axis=0)
+
+        # x data
+        states = np.arange(x_distribution.shape[0])
+        alphas = x_distribution.flatten()
+
+        states_baseline = np.arange(x_distribution_baseline.shape[0])
+        alphas_baseline = x_distribution_baseline.flatten()
+
+        ls = np.linspace(0, x_distribution.shape[0], 100)
+        estimate = np.interp(ls, states, alphas)
+        estimate_baseline = np.interp(ls, states_baseline, alphas_baseline)
+
+        colors = np.zeros((len(estimate),4))
+        colors[:, 3] = estimate
+
+        colors_baseline = np.zeros((len(estimate_baseline), 4))
+        colors_baseline[:,0] = 1
+        colors_baseline[:,3] = estimate_baseline
+
+        smear_x.scatter(t*np.ones(shape=(len(estimate),1)), ls, color=colors)
+        smear_x.scatter(t*np.ones(shape=(len(estimate_baseline), 1)), ls, color=colors_baseline)
+
+        # v data
+        states = np.arange(v_distribution.shape[0])
+        alphas = v_distribution.flatten()
+        ls = np.linspace(0, v_distribution.shape[0], 100)
+        estimate = np.interp(ls, states, alphas)
+
+        colors = np.zeros((len(estimate),4))
+        colors[:, 3] = estimate
+
+        smear_v.scatter(t*np.ones(shape=(len(estimate),1)), ls, color=colors)
+
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_xv_distrs_smear_lines", ".png")
+    plt.savefig(fname)
+
+def smear_dots(running_avg_ps, FIG_DIR, model_time):
+     # want to plot the running_avg_p x_distribution over time
+    plt.figure(4)
+    ax_x = plt.subplot(211)
+    ax_v = plt.subplot(212)
+
+    ax_x.set_xlabel('t')
+    ax_v.set_xlabel('t')
+    ax_x.set_ylabel('Policy distribution over x')
+    ax_v.set_ylabel('Policy distribution over v')
+
+
+    for t in range(len(running_avg_ps)):
+        running_avg_p = running_avg_ps[t]
+        x_distribution = np.sum(running_avg_p, axis=1)
+        v_distribution = np.sum(running_avg_p, axis=0)
+
+        alphas_x = x_distribution
+        colors_x = np.zeros((x_distribution.shape[0],4))
+        colors_x[:, 3] = alphas_x
+
+        alphas_v = v_distribution
+        colors_v = np.zeros((v_distribution.shape[0],4))
+        colors_v[:, 3] = alphas_v
+
+        ax_x.scatter(t*np.ones(shape=x_distribution.shape), x_distribution, color=colors_x)
+        ax_v.scatter(t*np.ones(shape=v_distribution.shape), v_distribution, color=colors_v)
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_xv_distrs_smear_dot", ".png")
+    plt.savefig(fname)
+
+def heatmap(running_avg_p, i):
+    plt.figure()
+    plt.imshow(np.ma.log(running_avg_p).filled(0), interpolation='spline16', cmap='Blues')
+    plt.title("Policy distribution at step %d" % i)
+    heatmap_dir = FIG_DIR + model_time + '/'
+    if not os.path.exists(heatmap_dir):
+        os.makedirs(heatmap_dir)
+
+    fname = heatmap_dir + "heatmap_%02d.png" % i
+    plt.savefig(fname)
+    # plt.show()
+
+def heatmap4(running_avg_ps):
+    # indexes = [0, 2, 5, 18]
+    indexes = [0,1,2,3]
     plt.figure(5)
+    axs = [plt.subplot(221), plt.subplot(222), plt.subplot(223), plt.subplot(224)]
+
+    # TODO: colorbar for the global figure
+    for idx, ax in zip(indexes,axs):
+        ax.imshow(np.ma.log(running_avg_ps[idx]).filled(0), interpolation='spline16', cmap='Blues')
+        # axs[i].colorbar()
+        ax.set_title('title')
+
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "_time_heatmaps", ".png")
+    plt.savefig(fname)
+    # plt.colorbar()
+    plt.show()
+
+
+def difference_heatmap(running_avg_ps, running_avg_ps_baseline):
+
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "_heatmap", ".png")
+    entropy_p = running_avg_ps[len(running_avg_ps) - 1]
+    random_p = running_avg_ps_baseline[len(running_avg_ps_baseline) - 1]
+
+    plt.figure(6)
+    diff_map = entropy_p - random_p
+
+    # normalize so 0 is grey.
+    max_p = max(abs(np.min(diff_map)), np.max(diff_map))
+    plt.imshow(diff_map, vmin=-max_p, vmax=max_p, interpolation='spline16', cmap='coolwarm')
+    plt.colorbar()
+    plt.title(r'$p_{\pi_{entropy}} - p_{\pi_{random}}$')
+    plt.savefig(fname)
+    plt.show()
+
+def three_d_histogram(running_avg_ps, FIG_DIR, model_time):
+    plt.figure(7)
     ax_x = plt.subplot(211)
     ax_v = plt.subplot(212, projection='3d')
     for t in range(len(running_avg_ps)):
@@ -77,92 +237,8 @@ def three_d_histogram(running_avg_ps, FIG_DIR, model_time):
     plt.savefig(fname)
 
 
-def smear_dots(running_avg_ps, FIG_DIR, model_time):
-     # want to plot the running_avg_p x_distribution over time
-    plt.figure(4)
-    ax_x = plt.subplot(211)
-    ax_v = plt.subplot(212)
-
-    ax_x.set_xlabel('t')
-    ax_v.set_xlabel('t')
-    ax_x.set_ylabel('Policy distribution over x')
-    ax_v.set_ylabel('Policy distribution over v')
 
 
-    for t in range(len(running_avg_ps)):
-        running_avg_p = running_avg_ps[t]
-        x_distribution = np.sum(running_avg_p, axis=1)
-        v_distribution = np.sum(running_avg_p, axis=0)
 
-        alphas_x = x_distribution
-        colors_x = np.zeros((x_distribution.shape[0],4))
-        colors_x[:, 3] = alphas_x
 
-        alphas_v = v_distribution
-        colors_v = np.zeros((v_distribution.shape[0],4))
-        colors_v[:, 3] = alphas_v
 
-        ax_x.scatter(t*np.ones(shape=x_distribution.shape), x_distribution, color=colors_x)
-        ax_v.scatter(t*np.ones(shape=v_distribution.shape), v_distribution, color=colors_v)
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_xv_distrs_smear_dot", ".png")
-    plt.savefig(fname)
-
-def smear_lines(running_avg_ps, FIG_DIR, model_time):
-    # want to plot the running_avg_p x_distribution over time
-    plt.figure(3)
-
-    smear = plt.subplot(111)
-    smear.set_xlabel('t')
-    smear.set_ylabel('Policy distribution over v')
-
-    for t in range(len(running_avg_ps)):
-        running_avg_p = running_avg_ps[t]
-        x_distribution = np.sum(running_avg_p, axis=1)
-        v_distribution = np.sum(running_avg_p, axis=0)
-
-        states = np.arange(x_distribution.shape[0])
-        alphas = x_distribution.flatten()
-
-        # expand data
-        ls = np.linspace(0, x_distribution.shape[0], 100)
-        estimate = np.interp(ls, states, alphas)
-
-        colors = np.zeros((len(estimate),4))
-        colors[:, 3] = estimate
-
-        smear.scatter(t*np.ones(shape=(len(estimate),1)), ls, color=colors)
-
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_xv_distrs_smear_lines", ".png")
-    plt.savefig(fname)
-   
-def generate_figures(env, MODEL_DIR, \
-    running_avg_entropies, entropies, \
-    running_avg_ps, average_ps, \
-    running_avg_ps_baseline, running_avg_entropies_baseline):
-    
-    FIG_DIR = 'figs/' + env + '/'
-    if not os.path.exists(FIG_DIR):
-        os.makedirs(FIG_DIR)
-    model_time = MODEL_DIR.split('/')[1]
-
-    # three_d_histogram(running_avg_ps, FIG_DIR, model_time)
-    # smear_lines(running_avg_ps, FIG_DIR, model_time)
-    # smear_dots(running_avg_ps, FIG_DIR, model_time)
-
-    plt.figure(1)
-    plt.plot(np.arange(len(running_avg_entropies)), running_avg_entropies)
-    plt.plot(np.arange(len(running_avg_entropies_baseline)), running_avg_entropies_baseline)
-    plt.xlabel("t")
-    plt.ylabel("Running average entropy of cumulative policy")
-    # plt.savefig(fname)
-    plt.show()
-
-    # fname = curiosity.get_next_file(FIG_DIR, model_time, "_entropy", ".png")    
-    # plt.figure(2)
-    # plt.plot(np.arange(epochs), entropies)
-    # plt.xlabel("t")
-    # plt.ylabel("Entropy of policy t")
-    # plt.savefig(fname)
-    # plt.show()
-
-    plt.show()
