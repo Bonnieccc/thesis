@@ -14,6 +14,7 @@ import numpy as np
 import scipy.stats
 import gym
 from gym.spaces import prng
+from gym import wrappers
 
 import torch
 from torch.distributions import Categorical
@@ -53,20 +54,26 @@ def get_next_file(directory, model_time, ext, dot=".png"):
         i += 1
     return fname
 
-def execute_average_policy(env, policies, T, avg_runs=1, render=False):
-    # run a simulation to see how the average policy behaves.
-
+# run a simulation to see how the average policy behaves.
+def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, render=False, video_dir=''):
     random_T = np.floor(random.random()*T)
     
     average_p = np.zeros(shape=(tuple(utils.num_states)))
     avg_entropy = 0
     random_initial_state = []
 
+    last_run = avg_runs-1
     for i in range(avg_runs):
+        # NOTE: this records ONLY the final run. BUG?
+        if video_dir != '' and render and i == last_run:
+            env = wrappers.Monitor(env, video_dir)
         # unroll for T steps and compute p
         p = np.zeros(shape=(tuple(utils.num_states)))
         state = env.reset()
-        for i in range(T):
+        # if user specified an initial state, use it.
+        if len(initial_state) != 0: 
+            env.env.state = initial_state
+        for t in range(T):
             # Compute average probability over action space for state.
             probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
             var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
@@ -82,11 +89,11 @@ def execute_average_policy(env, policies, T, avg_runs=1, render=False):
                 random_initial_state = state
                 print(random_initial_state)
 
-            if render and i % 10 == 0:
+            if render and i == last_run:
                 env.render()
-                time.sleep(.05)
+                time.sleep(0.02)
             if done:
-                env.reset()
+                break # env.reset()
 
         p /= float(T)
         average_p += p
@@ -105,9 +112,9 @@ def execute_average_policy(env, policies, T, avg_runs=1, render=False):
     return average_p, avg_entropy, random_initial_state
 
 
-def average_p_and_entropy(env, policies, T, avg_runs=1, render=False, save_video_dir=''):
+def average_p_and_entropy(env, policies, T, avg_runs=1, render=False, video_dir=''):
     exploration_policy = collect.average_policies(env, policies)
-    average_p = exploration_policy.execute(T, render=render, save_video_dir=save_video_dir)
+    average_p = exploration_policy.execute(T, render=render, video_dir=video_dir)
     average_ent = scipy.stats.entropy(average_p.flatten())
     for i in range(avg_runs-1):
         p = exploration_policy.execute(T)

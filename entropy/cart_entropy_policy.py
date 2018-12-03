@@ -83,7 +83,7 @@ class CartEntropyPolicy(nn.Module):
             policy_loss.append(-log_prob * reward.float())
 
         self.optimizer.zero_grad()
-        policy_loss = torch.cat(policy_loss).sum() # cost function
+        policy_loss = torch.cat(policy_loss).sum() # cost function?
         policy_loss.backward()
         self.optimizer.step()
         self.rewards.clear()
@@ -136,14 +136,17 @@ class CartEntropyPolicy(nn.Module):
                 print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}\tAverage Loss: {:.2f}'.format(
                     i_episode, ep_reward, running_reward, running_loss))
 
-    def execute(self, T, render=False, save_video_dir=''):
+    def execute(self, T, initial_state=[], render=False, video_dir=''):
         p = np.zeros(shape=(tuple(utils.num_states)))
 
-        if save_video_dir != '' and render:
-            self.env = wrappers.Monitor(self.env, save_video_dir)
+        if video_dir != '' and render:
+            self.env = wrappers.Monitor(self.env, video_dir)
+        
+        if len(initial_state) == 0:
+            initial_state = self.init_state
 
         state = self.env.reset()
-        self.env.env.state = self.init_state
+        self.env.env.state = initial_state
         state = self.get_obs()
         for t in range(T):  
             action = self.select_action(state)
@@ -152,21 +155,23 @@ class CartEntropyPolicy(nn.Module):
 
             if render:
                 self.env.render()
-                time.sleep(.05)
+                time.sleep(.02)
             if done:
                 break
 
         self.env.close()
         return p/float(T)
 
-    def execute_random(self, T, render=False, save_video_dir=''):
+    def execute_random(self, T, initial_state=[], render=False, video_dir=''):
         p = np.zeros(shape=(tuple(utils.num_states)))
 
-        if save_video_dir != '' and render:
-            self.env = wrappers.Monitor(self.env, save_video_dir)
+        if video_dir != '' and render:
+            self.env = wrappers.Monitor(self.env, video_dir)
+        if len(initial_state) == 0:
+            initial_state = self.env.reset() # get random starting location
 
         state = self.env.reset()
-        self.env.env.state = self.init_state
+        self.env.env.state = initial_state
         state = self.get_obs()
 
         for t in range(T):  
@@ -182,7 +187,7 @@ class CartEntropyPolicy(nn.Module):
             
             if render:
                 self.env.render()
-                time.sleep(0.05)
+                time.sleep(0.02)
             if done:
                 break
 

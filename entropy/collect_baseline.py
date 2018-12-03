@@ -143,21 +143,21 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
         policies.append(policy)
 
-        # update initial state - execute 
-
         # Get next distribution p by executing pi for T steps.
         p = policy.execute(T, render=False)
         
-        average_over_rounds = 10
-        p_baseline = policy.execute_random(T, render=args.render, save_video_dir='cmp_videos/'+MODEL_DIR+'baseline_'+ str(i)+'/') # args.episodes?
+        a = 10 # average over this many rounds
+        baseline_videos = 'cmp_videos/%sbaseline_%d/'% (MODEL_DIR, i) # note that MODEL_DIR has trailing slash
+        entropy_videos = 'cmp_videos/%sentropy_%d/'% (MODEL_DIR, i)
+        p_baseline = policy.execute_random(T, render=True, video_dir=baseline_videos) # args.episodes?
         round_entropy_baseline = scipy.stats.entropy(p_baseline.flatten())
-        for av in range(average_over_rounds - 1):
-            next_p_baseline = policy.execute_random(T, render=args.render, save_video_dir='cmp_videos/'+MODEL_DIR+'baseline_'+ str(i)+'/') # args.episodes?
+        for av in range(a - 1):
+            next_p_baseline = policy.execute_random(T)
             p_baseline += next_p_baseline
             # print(scipy.stats.entropy(next_p_baseline.flatten()))
             round_entropy_baseline += scipy.stats.entropy(next_p_baseline.flatten())
-        p_baseline /= float(average_over_rounds)
-        round_entropy_baseline /= float(average_over_rounds) # running average of the entropy
+        p_baseline /= float(a)
+        round_entropy_baseline /= float(a) # running average of the entropy
         
         # note: the entropy is p_baseline is not the same as the computed avg entropy
         # print("baseline compare:")
@@ -174,10 +174,8 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
 
         # Execute the cumulative average policy thus far.
         # Estimate distribution and entropy.
-        # average_p, round_avg_ent = curiosity.average_p_and_entropy(env, policies, T, avg_runs=average_over_rounds, render=args.render, save_video_dir='cmp_videos/'+MODEL_DIR+'entropy_'+ str(i)+'/')
-        average_p, round_avg_ent, initial_state = curiosity.execute_average_policy(env, policies, T, avg_runs=average_over_rounds)
-
-        # TODO: Use this to update initial_state
+        average_p, round_avg_ent, initial_state = \
+            curiosity.execute_average_policy(env, policies, T, initial_state=initial_state, avg_runs=a, render=True, video_dir=entropy_videos)
 
         average_ps.append(average_p)
         average_entropies.append(round_avg_ent)
@@ -214,6 +212,11 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         window_running_avg_ents_baseline.append(window_running_avg_ent_baseline)
         window_running_avg_ps_baseline.append(window_running_avg_p_baseline)
 
+        print("average_p =") 
+        print(average_p)
+
+        print("..........")
+
         print("round_avg_ent[%d] = %f" % (i, round_avg_ent))
         print("running_avg_ent = %s" % running_avg_ent)
         print("window_running_avg_ent = %s" % window_running_avg_ent)
@@ -230,13 +233,20 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
 
         print("----------------------")
 
-        plotting.heatmap(running_avg_p, i)
+        # plotting.heatmap(running_avg_p, average_p, i)
 
-    plotting.heatmap4(running_avg_ps)
-    # plotting.smear_lines(running_avg_ps, running_avg_ps_baseline)
+    # plotting.heatmap4(running_avg_ps, [])
+    plotting.smear_lines(running_avg_ps, running_avg_ps_baseline)
     plotting.running_average_entropy(running_avg_entropies, running_avg_entropies_baseline)
     plotting.running_average_entropy_window(window_running_avg_ents, window_running_avg_ents_baseline, window)
     # plotting.difference_heatmap(running_avg_ps, running_avg_ps_baseline)
+
+    indexes = []
+    print('which indexes?')
+    for i in range(4):
+        idx = input("index :")
+        indexes.append(int(idx))
+    plotting.heatmap4(running_avg_ps, indexes)
 
     return policies
 
@@ -267,14 +277,16 @@ def main():
     plotting.FIG_DIR = 'figs/' + args.env + '/'
     if not os.path.exists(plotting.FIG_DIR):
         os.makedirs(plotting.FIG_DIR)
-    plotting.model_time = TIME
+    plotting.model_time = 'models_' + TIME + '/'
 
     policies = collect_entropy_policies(env, args.epochs, args.T, MODEL_DIR)
 
     exploration_policy = average_policies(env, policies)
     if (args.collect_video):
         MODEL_DIR = ''
-    # average_p = exploration_policy.execute(args.T, render=True, save_video_dir=MODEL_DIR+'videos/epoch_' + str(args.epochs) + '/')
+    
+    # Final policy:
+    average_p = curiosity.execute_average_policy(env, policies, args.T)
     overall_avg_ent = scipy.stats.entropy(average_p.flatten())
 
     print('*************')

@@ -21,8 +21,8 @@ FIG_DIR = ''
 model_time = ''
 
 def running_average_entropy(running_avg_entropies, running_avg_entropies_baseline):
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg", ".png")
-    plt.figure(1)
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "running_avg", ".png")
+    plt.figure()
     plt.plot(np.arange(len(running_avg_entropies)), running_avg_entropies)
     plt.plot(np.arange(len(running_avg_entropies_baseline)), running_avg_entropies_baseline)
     plt.legend(["Entropy", "Random"])
@@ -30,11 +30,10 @@ def running_average_entropy(running_avg_entropies, running_avg_entropies_baselin
     plt.ylabel("Running average entropy of cumulative policy")
     plt.title("Policy Entropy over Time")
     plt.savefig(fname)
-    plt.show()
 
 def running_average_entropy_window(window_running_avg_ents, window_running_avg_ents_baseline, window):
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_window", ".png")
-    plt.figure(2)
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "running_avg_window", ".png")
+    plt.figure()
     plt.plot(np.arange(len(window_running_avg_ents)), window_running_avg_ents)
     plt.plot(np.arange(len(window_running_avg_ents_baseline)), window_running_avg_ents_baseline)
     plt.legend(["Entropy", "Random"])
@@ -42,7 +41,6 @@ def running_average_entropy_window(window_running_avg_ents, window_running_avg_e
     plt.ylabel("Running avg entropy")
     plt.title("Policy entropy over time, window = %d" % window)
     plt.savefig(fname)
-    plt.show()
  
 def smear_lines(running_avg_ps, running_avg_ps_baseline):
     # want to plot the running_avg_p x_distribution over time
@@ -83,7 +81,7 @@ def smear_lines(running_avg_ps, running_avg_ps_baseline):
         colors_baseline[:,3] = estimate_baseline
 
         smear_x.scatter(t*np.ones(shape=(len(estimate),1)), ls, color=colors)
-        smear_x.scatter(t*np.ones(shape=(len(estimate_baseline), 1)), ls, color=colors_baseline)
+        # smear_x.scatter(t*np.ones(shape=(len(estimate_baseline), 1)), ls, color=colors_baseline)
 
         # v data
         states = np.arange(v_distribution.shape[0])
@@ -96,12 +94,12 @@ def smear_lines(running_avg_ps, running_avg_ps_baseline):
 
         smear_v.scatter(t*np.ones(shape=(len(estimate),1)), ls, color=colors)
 
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_xv_distrs_smear_lines", ".png")
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "running_avg_xv_distrs_smear_lines", ".png")
     plt.savefig(fname)
 
-def smear_dots(running_avg_ps, FIG_DIR, model_time):
+def smear_dots(running_avg_ps):
      # want to plot the running_avg_p x_distribution over time
-    plt.figure(4)
+    plt.figure()
     ax_x = plt.subplot(211)
     ax_v = plt.subplot(212)
 
@@ -109,7 +107,6 @@ def smear_dots(running_avg_ps, FIG_DIR, model_time):
     ax_v.set_xlabel('t')
     ax_x.set_ylabel('Policy distribution over x')
     ax_v.set_ylabel('Policy distribution over v')
-
 
     for t in range(len(running_avg_ps)):
         running_avg_p = running_avg_ps[t]
@@ -126,46 +123,67 @@ def smear_dots(running_avg_ps, FIG_DIR, model_time):
 
         ax_x.scatter(t*np.ones(shape=x_distribution.shape), x_distribution, color=colors_x)
         ax_v.scatter(t*np.ones(shape=v_distribution.shape), v_distribution, color=colors_v)
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_running_avg_xv_distrs_smear_dot", ".png")
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "running_avg_xv_distrs_smear_dot", ".png")
     plt.savefig(fname)
 
-def heatmap(running_avg_p, i):
+def heatmap(running_avg_p, avg_p, i):
+    # Create running average heatmap.
     plt.figure()
     plt.imshow(np.ma.log(running_avg_p).filled(0), interpolation='spline16', cmap='Blues')
-    plt.title("Policy distribution at step %d" % i)
-    heatmap_dir = FIG_DIR + model_time + '/'
-    if not os.path.exists(heatmap_dir):
-        os.makedirs(heatmap_dir)
 
-    fname = heatmap_dir + "heatmap_%02d.png" % i
+    plt.xticks([], [])
+    plt.yticks([], [])
+    plt.xlabel("v")
+    plt.ylabel("x")
+
+    # plt.title("Policy distribution at step %d" % i)
+    running_avg_heatmap_dir = FIG_DIR + model_time + '/' + 'running_avg' + '/'
+    if not os.path.exists(running_avg_heatmap_dir):
+        os.makedirs(running_avg_heatmap_dir)
+    fname = running_avg_heatmap_dir + "heatmap_%02d.png" % i
     plt.savefig(fname)
-    # plt.show()
 
-def heatmap4(running_avg_ps):
-    # indexes = [0, 2, 5, 18]
-    indexes = [0,1,2,3]
-    plt.figure(5)
+    # Create episode heatmap.
+    plt.figure()
+    plt.imshow(np.ma.log(avg_p).filled(0), interpolation='spline16', cmap='Blues')
+
+    plt.xticks([], [])
+    plt.yticks([], [])
+    plt.xlabel("v")
+    plt.ylabel("x")
+
+    # plt.title("Policy distribution at step %d" % i)
+    avg_heatmap_dir = FIG_DIR + model_time + '/' + 'avg' + '/'
+    if not os.path.exists(avg_heatmap_dir):
+        os.makedirs(avg_heatmap_dir)
+    fname = avg_heatmap_dir + "heatmap_%02d.png" % i
+    plt.savefig(fname)
+
+
+def heatmap4(running_avg_ps, indexes=[0,1,2,3]):
+    plt.figure()
     axs = [plt.subplot(221), plt.subplot(222), plt.subplot(223), plt.subplot(224)]
 
     # TODO: colorbar for the global figure
     for idx, ax in zip(indexes,axs):
         ax.imshow(np.ma.log(running_avg_ps[idx]).filled(0), interpolation='spline16', cmap='Blues')
-        # axs[i].colorbar()
-        ax.set_title('title')
+        ax.set_title("Epoch %d" % idx)
+        ax.xaxis.set_ticks([])
+        ax.yaxis.set_ticks([])
 
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_time_heatmaps", ".png")
+    plt.tight_layout()
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "time_heatmaps", ".png")
     plt.savefig(fname)
     # plt.colorbar()
-    plt.show()
-
+    # plt.show()
 
 def difference_heatmap(running_avg_ps, running_avg_ps_baseline):
 
-    fname = curiosity.get_next_file(FIG_DIR, model_time, "_heatmap", ".png")
+    fname = curiosity.get_next_file(FIG_DIR, model_time, "heatmap", ".png")
     entropy_p = running_avg_ps[len(running_avg_ps) - 1]
     random_p = running_avg_ps_baseline[len(running_avg_ps_baseline) - 1]
 
-    plt.figure(6)
+    plt.figure()
     diff_map = entropy_p - random_p
 
     # normalize so 0 is grey.
@@ -174,9 +192,9 @@ def difference_heatmap(running_avg_ps, running_avg_ps_baseline):
     plt.colorbar()
     plt.title(r'$p_{\pi_{entropy}} - p_{\pi_{random}}$')
     plt.savefig(fname)
-    plt.show()
+    # plt.show()
 
-def three_d_histogram(running_avg_ps, FIG_DIR, model_time):
+def three_d_histogram(running_avg_ps):
     plt.figure(7)
     ax_x = plt.subplot(211)
     ax_v = plt.subplot(212, projection='3d')
