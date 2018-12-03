@@ -41,8 +41,8 @@ mc_obs_dim = 2
 mc_action_dim = 3
  
 # env variables for Pendulum
-pend_na = 6
-pend_nv = 10
+pend_na = 8
+pend_nv = 8
 pendulum_obs_dim = 3
 pendulum_action_dim = 3
 
@@ -79,7 +79,7 @@ def get_state_bins():
             discretize_range(0, np.pi, pend_na), 
             discretize_range(0, np.pi, pend_na), 
             # Velocity
-            discretize_range(-8, 8, pend_nv)
+            discretize_range(-8, 8, pend_nv) # todo: need to limit velocity/acceleration?
         ]
     return state_bins
 

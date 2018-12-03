@@ -28,12 +28,6 @@ import torch
 from torch.distributions import Normal
 import random
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-import matplotlib.mlab as mlab
-from mpl_toolkits.mplot3d import Axes3D
-
 from itertools import islice
 
 def window(seq, n=2):
@@ -149,7 +143,7 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         a = 10 # average over this many rounds
         baseline_videos = 'cmp_videos/%sbaseline_%d/'% (MODEL_DIR, i) # note that MODEL_DIR has trailing slash
         entropy_videos = 'cmp_videos/%sentropy_%d/'% (MODEL_DIR, i)
-        p_baseline = policy.execute_random(T, render=True, video_dir=baseline_videos) # args.episodes?
+        p_baseline = policy.execute_random(T, render=False, video_dir=baseline_videos) # args.episodes?
         round_entropy_baseline = scipy.stats.entropy(p_baseline.flatten())
         for av in range(a - 1):
             next_p_baseline = policy.execute_random(T)
@@ -175,7 +169,7 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         # Execute the cumulative average policy thus far.
         # Estimate distribution and entropy.
         average_p, round_avg_ent, initial_state = \
-            curiosity.execute_average_policy(env, policies, T, initial_state=initial_state, avg_runs=a, render=True, video_dir=entropy_videos)
+            curiosity.execute_average_policy(env, policies, T, initial_state=initial_state, avg_runs=a, render=False, video_dir=entropy_videos)
 
         average_ps.append(average_p)
         average_entropies.append(round_avg_ent)
@@ -233,10 +227,9 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
 
         print("----------------------")
 
-        # plotting.heatmap(running_avg_p, average_p, i)
+        plotting.heatmap(running_avg_p, average_p, i)
 
-    # plotting.heatmap4(running_avg_ps, [])
-    plotting.smear_lines(running_avg_ps, running_avg_ps_baseline)
+    # plotting.smear_lines(running_avg_ps, running_avg_ps_baseline)
     plotting.running_average_entropy(running_avg_entropies, running_avg_entropies_baseline)
     plotting.running_average_entropy_window(window_running_avg_ents, window_running_avg_ents_baseline, window)
     # plotting.difference_heatmap(running_avg_ps, running_avg_ps_baseline)
@@ -246,7 +239,7 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
     for i in range(4):
         idx = input("index :")
         indexes.append(int(idx))
-    plotting.heatmap4(running_avg_ps, indexes)
+    plotting.heatmap4(running_avg_ps, running_avg_ps_baseline, indexes)
 
     return policies
 
@@ -260,6 +253,10 @@ def main():
 
     # Make environment.
     env = gym.make(args.env)
+    # TODO: limit acceleration (maybe also speed?) for Pendulum.
+    if args.env == "Pendulum-v0":
+        env.env.max_speed = 8
+        env.env.max_torque = 1
     env.seed(int(time.time())) # seed environment
     prng.seed(int(time.time())) # seed action space
 
@@ -275,9 +272,9 @@ def main():
         metadata.write("state_bins: %s\n" % utils.state_bins)
 
     plotting.FIG_DIR = 'figs/' + args.env + '/'
-    if not os.path.exists(plotting.FIG_DIR):
-        os.makedirs(plotting.FIG_DIR)
     plotting.model_time = 'models_' + TIME + '/'
+    if not os.path.exists(plotting.FIG_DIR+plotting.model_time):
+        os.makedirs(plotting.FIG_DIR+plotting.model_time)
 
     policies = collect_entropy_policies(env, args.epochs, args.T, MODEL_DIR)
 
@@ -286,13 +283,11 @@ def main():
         MODEL_DIR = ''
     
     # Final policy:
-    average_p = curiosity.execute_average_policy(env, policies, args.T)
-    overall_avg_ent = scipy.stats.entropy(average_p.flatten())
-
-    print('*************')
-    print(np.reshape(average_p, utils.space_dim))
-
-    print("overall_avg_ent = %f" % overall_avg_ent)
+    # average_p, _, _ = curiosity.execute_average_policy(env, policies, args.T)
+    # overall_avg_ent = scipy.stats.entropy(average_p.flatten())
+    # print('*************')
+    # print(np.reshape(average_p, utils.space_dim))
+    # print("overall_avg_ent = %f" % overall_avg_ent)
 
     env.close()
 

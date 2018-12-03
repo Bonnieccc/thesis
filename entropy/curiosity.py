@@ -73,6 +73,7 @@ def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, rende
         # if user specified an initial state, use it.
         if len(initial_state) != 0: 
             env.env.state = initial_state
+            # state = initial_state
         for t in range(T):
             # Compute average probability over action space for state.
             probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
@@ -85,13 +86,12 @@ def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, rende
             
             state, reward, done, _ = env.step(action)
             p[tuple(utils.discretize_state(state))] += 1
-            if (i == random_T):
-                random_initial_state = state
+            if (t == random_T):
+                random_initial_state = env.env.state
                 print(random_initial_state)
 
             if render and i == last_run:
                 env.render()
-                time.sleep(0.02)
             if done:
                 break # env.reset()
 

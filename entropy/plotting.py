@@ -10,11 +10,13 @@ from scipy.optimize import curve_fit
 import curiosity
 
 import matplotlib
-matplotlib.use('TkAgg')
+matplotlib.use('Agg') # matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 from mpl_toolkits.mplot3d import Axes3D
 
+import utils
+args = utils.get_args()
 
 # By default, the plotter saves figures to the directory where it's executed.
 FIG_DIR = ''
@@ -129,13 +131,16 @@ def smear_dots(running_avg_ps):
 def heatmap(running_avg_p, avg_p, i):
     # Create running average heatmap.
     plt.figure()
-    plt.imshow(np.ma.log(running_avg_p).filled(0), interpolation='spline16', cmap='Blues')
+    min_value = np.min(np.ma.log(running_avg_p))
+    plt.imshow(np.ma.log(running_avg_p).filled(min_value), interpolation='spline16', cmap='Blues')
 
     plt.xticks([], [])
     plt.yticks([], [])
     plt.xlabel("v")
-    plt.ylabel("x")
-
+    if (args.env == "MountainCarContinuous-v0"):
+        plt.ylabel("x")
+    else:
+        plt.ylabel(r"$\Theta$")
     # plt.title("Policy distribution at step %d" % i)
     running_avg_heatmap_dir = FIG_DIR + model_time + '/' + 'running_avg' + '/'
     if not os.path.exists(running_avg_heatmap_dir):
@@ -145,12 +150,16 @@ def heatmap(running_avg_p, avg_p, i):
 
     # Create episode heatmap.
     plt.figure()
-    plt.imshow(np.ma.log(avg_p).filled(0), interpolation='spline16', cmap='Blues')
+    min_value = np.min(np.ma.log(avg_p))
+    plt.imshow(np.ma.log(avg_p).filled(min_value), interpolation='spline16', cmap='Blues')
 
     plt.xticks([], [])
     plt.yticks([], [])
     plt.xlabel("v")
-    plt.ylabel("x")
+    if (args.env == "MountainCarContinuous-v0"):
+        plt.ylabel("x")
+    else:
+        plt.ylabel(r"$\Theta$")
 
     # plt.title("Policy distribution at step %d" % i)
     avg_heatmap_dir = FIG_DIR + model_time + '/' + 'avg' + '/'
@@ -160,13 +169,26 @@ def heatmap(running_avg_p, avg_p, i):
     plt.savefig(fname)
 
 
-def heatmap4(running_avg_ps, indexes=[0,1,2,3]):
+def heatmap4(running_avg_ps, running_avg_ps_baseline, indexes=[0,1,2,3]):
     plt.figure()
-    axs = [plt.subplot(221), plt.subplot(222), plt.subplot(223), plt.subplot(224)]
+    row1 = [plt.subplot(241), plt.subplot(242), plt.subplot(243), plt.subplot(244)]
+    row2 = [plt.subplot(245), plt.subplot(246), plt.subplot(247), plt.subplot(248)]
+
+    min_value = np.min(np.ma.log(running_avg_ps))
+    min_value_baseline = np.min(np.ma.log(running_avg_ps_baseline))
+    min_value = np.minimum(min_value, min_value_baseline)
 
     # TODO: colorbar for the global figure
-    for idx, ax in zip(indexes,axs):
-        ax.imshow(np.ma.log(running_avg_ps[idx]).filled(0), interpolation='spline16', cmap='Blues')
+    for idx, ax in zip(indexes,row1):
+        # min_value = np.min(np.ma.log(running_avg_ps[idx]))
+        ax.imshow(np.ma.log(running_avg_ps[idx]).filled(min_value), interpolation='spline16', cmap='Blues')
+        ax.set_title("Epoch %d" % idx)
+        ax.xaxis.set_ticks([])
+        ax.yaxis.set_ticks([])
+    
+    for idx, ax in zip(indexes,row2):
+        # min_value = np.min(np.ma.log(running_avg_ps_baseline[idx]))
+        ax.imshow(np.ma.log(running_avg_ps_baseline[idx]).filled(min_value), interpolation='spline16', cmap='Oranges')
         ax.set_title("Epoch %d" % idx)
         ax.xaxis.set_ticks([])
         ax.yaxis.set_ticks([])

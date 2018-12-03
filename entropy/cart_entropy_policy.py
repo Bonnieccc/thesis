@@ -155,7 +155,6 @@ class CartEntropyPolicy(nn.Module):
 
             if render:
                 self.env.render()
-                time.sleep(.02)
             if done:
                 break
 
@@ -187,7 +186,6 @@ class CartEntropyPolicy(nn.Module):
             
             if render:
                 self.env.render()
-                time.sleep(0.02)
             if done:
                 break
 
