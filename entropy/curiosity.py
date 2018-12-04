@@ -54,9 +54,44 @@ def get_next_file(directory, model_time, ext, dot=".png"):
         i += 1
     return fname
 
+def get_obs(state):
+    if utils.args.env == "Pendulum-v0":
+        theta, thetadot = state
+        return np.array([np.cos(theta), np.sin(theta), thetadot])
+    elif utils.args.env == "MountainCarContinuous-v0":
+        return np.array(state)
+
+    # unroll for T steps and compute p
+def execute_policy_internal(env, T, policies, state, render):
+    random_T = np.floor(random.random()*T)
+    p = np.zeros(shape=(tuple(utils.num_states)))
+    random_initial_state = []
+
+    for t in range(T):
+        # Compute average probability over action space for state.
+        probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
+        var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
+        for policy in policies:
+            prob = policy.get_probs(state)
+            probs += prob
+        probs /= len(policies)
+        action = select_action(probs)
+        
+        state, reward, done, _ = env.step(action)
+        p[tuple(utils.discretize_state(state))] += 1
+        if (t == random_T and not render):
+            random_initial_state = env.env.state
+
+        if render:
+            env.render()
+        if done:
+            break # env.reset()
+
+    p /= float(T)
+    return p, random_initial_state
+
 # run a simulation to see how the average policy behaves.
 def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, render=False, video_dir=''):
-    random_T = np.floor(random.random()*T)
     
     average_p = np.zeros(shape=(tuple(utils.num_states)))
     avg_entropy = 0
@@ -64,40 +99,27 @@ def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, rende
 
     last_run = avg_runs-1
     for i in range(avg_runs):
-        # NOTE: this records ONLY the final run. BUG?
+        if len(initial_state) == 0:
+            initial_state = env.reset()
+
+        # NOTE: this records ONLY the final run. 
         if video_dir != '' and render and i == last_run:
-            env = wrappers.Monitor(env, video_dir)
-        # unroll for T steps and compute p
-        p = np.zeros(shape=(tuple(utils.num_states)))
-        state = env.reset()
-        # if user specified an initial state, use it.
-        if len(initial_state) != 0: 
-            env.env.state = initial_state
-            # state = initial_state
-        for t in range(T):
-            # Compute average probability over action space for state.
-            probs = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
-            var = torch.tensor(np.zeros(shape=(1,utils.action_dim))).float()
-            for policy in policies:
-                prob = policy.get_probs(state)
-                probs += prob
-            probs /= len(policies)
-            action = select_action(probs)
+            wrapped_env = wrappers.Monitor(env, video_dir)
+            wrapped_env.unwrapped.reset_state = initial_state
+            state = wrapped_env.reset()
+            state = get_obs(state)
             
-            state, reward, done, _ = env.step(action)
-            p[tuple(utils.discretize_state(state))] += 1
-            if (t == random_T):
-                random_initial_state = env.env.state
-                print(random_initial_state)
+            p, random_initial_state = execute_policy_internal(wrapped_env, T, policies, state, True)
+            average_p += p
+            avg_entropy += scipy.stats.entropy(average_p.flatten())
 
-            if render and i == last_run:
-                env.render()
-            if done:
-                break # env.reset()
-
-        p /= float(T)
-        average_p += p
-        avg_entropy += scipy.stats.entropy(average_p.flatten())
+        else:
+            env.env.reset_state = initial_state
+            state = env.reset()
+            state = get_obs(state)
+            p, random_initial_state = execute_policy_internal(env, T, policies, state, False)
+            average_p += p
+            avg_entropy += scipy.stats.entropy(average_p.flatten())
 
     env.close()
     average_p /= float(avg_runs)

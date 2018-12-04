@@ -91,13 +91,20 @@ class CartEntropyPolicy(nn.Module):
 
         return policy_loss
 
-    def get_obs(self):
+    def get_initial_state(self):
         if utils.args.env == "Pendulum-v0":
             self.env.env.state = [np.pi, 0] 
             theta, thetadot = self.env.env.state
             return np.array([np.cos(theta), np.sin(theta), thetadot])
         elif utils.args.env == "MountainCarContinuous-v0":
             self.env.env.state = [-0.50, 0]
+            return np.array(self.env.env.state)
+
+    def get_obs(self):
+        if utils.args.env == "Pendulum-v0":
+            theta, thetadot = self.env.env.state
+            return np.array([np.cos(theta), np.sin(theta), thetadot])
+        elif utils.args.env == "MountainCarContinuous-v0":
             return np.array(self.env.env.state)
 
     def learn_policy(self, reward_fn, initial_state=[], episodes=1000, train_steps=1000):
@@ -109,9 +116,8 @@ class CartEntropyPolicy(nn.Module):
         running_reward = 0
         running_loss = 0
         for i_episode in range(episodes):
-            # state = self.env.reset()
+            self.env.env.reset_state = initial_state
             self.env.reset()
-            self.env.env.state = initial_state
             state = self.get_obs()
             ep_reward = 0
             for t in range(train_steps):  # Don't infinite loop while learning
@@ -121,8 +127,8 @@ class CartEntropyPolicy(nn.Module):
                 ep_reward += reward
                 self.rewards.append(reward)
                 if done:
-                    # self.env.reset()
-                    break
+                    # TODO: self.env.env.reset_state = initial_state ? 
+                    self.env.reset()
 
             running_reward = running_reward * 0.99 + ep_reward * 0.01
             if (i_episode == 0):
@@ -136,43 +142,46 @@ class CartEntropyPolicy(nn.Module):
                 print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}\tAverage Loss: {:.2f}'.format(
                     i_episode, ep_reward, running_reward, running_loss))
 
-    def execute(self, T, initial_state=[], render=False, video_dir=''):
+    def execute_internal(self, env, T, state, render):
         p = np.zeros(shape=(tuple(utils.num_states)))
-
-        if video_dir != '' and render:
-            self.env = wrappers.Monitor(self.env, video_dir)
-        
-        if len(initial_state) == 0:
-            initial_state = self.init_state
-
-        state = self.env.reset()
-        self.env.env.state = initial_state
-        state = self.get_obs()
+        print("Simulation starting at = " + str(state))
         for t in range(T):  
             action = self.select_action(state)
             state, reward, done, _ = self.env.step(action)
             p[tuple(utils.discretize_state(state))] += 1
 
             if render:
-                self.env.render()
+                env.render()
             if done:
                 break
+        env.close()
+        return p
 
-        self.env.close()
-        return p/float(T)
-
-    def execute_random(self, T, initial_state=[], render=False, video_dir=''):
+    def execute(self, T, initial_state=[], render=False, video_dir=''):
         p = np.zeros(shape=(tuple(utils.num_states)))
 
-        if video_dir != '' and render:
-            self.env = wrappers.Monitor(self.env, video_dir)
         if len(initial_state) == 0:
-            initial_state = self.env.reset() # get random starting location
+            initial_state = self.env.reset()
 
-        state = self.env.reset()
-        self.env.env.state = initial_state
-        state = self.get_obs()
+        print("initial_state = " + str(initial_state))
 
+        if video_dir != '' and render:
+            print("rendering env in execute()")
+            wrapped_env = wrappers.Monitor(self.env, video_dir)
+            wrapped_env.unwrapped.reset_state = initial_state
+            state = wrapped_env.reset()
+            state = self.get_obs()
+            p = self.execute_random_internal(wrapped_env, T, state, render)
+        else:
+            self.env.env.reset_state = initial_state
+            state = self.env.reset()
+            state = self.get_obs()
+            p = self.execute_random_internal(self.env, T, state, render)
+        
+        return p/float(T)
+
+    def execute_random_internal(self, env, T, state, render):
+        p = np.zeros(shape=(tuple(utils.num_states)))
         for t in range(T):  
             r = random.random()
             action = -1
@@ -181,15 +190,37 @@ class CartEntropyPolicy(nn.Module):
             elif r < 2/3.:
                 action = 1
             # action = self.env.action_space.sample() # continuous actions
-            state, reward, done, _ = self.env.step([action])
+            state, reward, done, _ = env.step([action])
             p[tuple(utils.discretize_state(state))] += 1
             
             if render:
-                self.env.render()
+                env.render()
             if done:
                 break
+        env.close()
+        return p
 
-        self.env.close()
+    def execute_random(self, T, initial_state=[], render=False, video_dir=''):
+        p = np.zeros(shape=(tuple(utils.num_states)))
+
+        if len(initial_state) == 0:
+            initial_state = self.env.reset() # get random starting location
+
+        print("initial_state= " + str(initial_state))
+
+        if video_dir != '' and render:
+            print("rendering env in execute_random()")
+            wrapped_env = wrappers.Monitor(self.env, video_dir)
+            wrapped_env.unwrapped.reset_state = initial_state
+            state = wrapped_env.reset()
+            state = self.get_obs()
+            p = self.execute_random_internal(wrapped_env, T, state, render)
+        else:
+            self.env.env.reset_state = initial_state
+            state = self.env.reset()
+            state = self.get_obs()
+            p = self.execute_random_internal(self.env, T, state, render)
+
         return p/float(T)
 
     def save(self, filename):

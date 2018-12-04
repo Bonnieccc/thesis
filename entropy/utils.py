@@ -23,7 +23,7 @@ parser.add_argument('--env', type=str, default='fake', metavar='env',
 parser.add_argument('--models_dir', type=str, default='/', metavar='N',
                     help='directory from which to load model policies')
 
-parser.add_argument('--collect_video', action='store_true',
+parser.add_argument('--record', action='store_true',
                     help='collect a video of the final policy')
 parser.add_argument('--render', action='store_true',
                     help='render the environment')
@@ -35,8 +35,8 @@ def get_args():
     return copy.deepcopy(args)
 
 # Env variables for MountainCarContinuous
-nx = 10
-nv = 9
+nx = 12
+nv = 7
 mc_obs_dim = 2
 mc_action_dim = 3
  
