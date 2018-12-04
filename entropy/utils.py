@@ -35,8 +35,8 @@ def get_args():
     return copy.deepcopy(args)
 
 # Env variables for MountainCarContinuous
-nx = 12
-nv = 7
+nx = 10
+nv = 8
 mc_obs_dim = 2
 mc_action_dim = 3
  
