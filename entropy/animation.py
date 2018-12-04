@@ -3,7 +3,7 @@ import sys
 
 import imageio
 
-base_dir = '/Users/abbyvansoest/thesis/entropy/figs/MountainCarContinuous-v0/'
+base_dir = '/Users/abbyvansoest/thesis/entropy/figs/'
 
 # example: python animation.py 2018_12_02-22-15
 directory = base_dir + sys.argv[1] + '/'

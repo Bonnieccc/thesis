@@ -174,20 +174,20 @@ def heatmap4(running_avg_ps, running_avg_ps_baseline, indexes=[0,1,2,3]):
     row1 = [plt.subplot(241), plt.subplot(242), plt.subplot(243), plt.subplot(244)]
     row2 = [plt.subplot(245), plt.subplot(246), plt.subplot(247), plt.subplot(248)]
 
-    min_value = np.min(np.ma.log(running_avg_ps))
-    min_value_baseline = np.min(np.ma.log(running_avg_ps_baseline))
-    min_value = np.minimum(min_value, min_value_baseline)
+    # min_value = np.min(np.ma.log(running_avg_ps))
+    # min_value_baseline = np.min(np.ma.log(running_avg_ps_baseline))
+    # min_value = np.minimum(min_value, min_value_baseline)
 
     # TODO: colorbar for the global figure
     for idx, ax in zip(indexes,row1):
-        # min_value = np.min(np.ma.log(running_avg_ps[idx]))
+        min_value = np.min(np.ma.log(running_avg_ps[idx]))
         ax.imshow(np.ma.log(running_avg_ps[idx]).filled(min_value), interpolation='spline16', cmap='Blues')
         ax.set_title("Epoch %d" % idx)
         ax.xaxis.set_ticks([])
         ax.yaxis.set_ticks([])
     
     for idx, ax in zip(indexes,row2):
-        # min_value = np.min(np.ma.log(running_avg_ps_baseline[idx]))
+        min_value = np.min(np.ma.log(running_avg_ps_baseline[idx]))
         ax.imshow(np.ma.log(running_avg_ps_baseline[idx]).filled(min_value), interpolation='spline16', cmap='Oranges')
         ax.set_title("Epoch %d" % idx)
         ax.xaxis.set_ticks([])
