@@ -207,17 +207,21 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         window_running_avg_ents_baseline.append(window_running_avg_ent_baseline)
         window_running_avg_ps_baseline.append(window_running_avg_p_baseline)
 
+        print("p=")
+        print(p)
+        print("..........")
+        print("round_entropy = %f" % (round_entropy))
+
+        print("---------------------")
+
         print("average_p =") 
         print(average_p)
 
         print("..........")
 
-        print("round_entropy = %f" %(round_entropy))
         print("round_avg_ent[%d] = %f" % (i, round_avg_ent))
         print("running_avg_ent = %s" % running_avg_ent)
         print("window_running_avg_ent = %s" % window_running_avg_ent)
-        # print("running_avg_p =") 
-        # print(running_avg_p)
 
         print("..........")
 

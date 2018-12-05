@@ -116,7 +116,8 @@ class CartEntropyPolicy(nn.Module):
         running_reward = 0
         running_loss = 0
         for i_episode in range(episodes):
-            self.env.env.reset_state = initial_state
+            if i_episode % 2 == 0:
+                self.env.env.reset_state = initial_state
             self.env.reset()
             state = self.get_obs()
             ep_reward = 0
