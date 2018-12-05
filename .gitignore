@@ -2,3 +2,7 @@ bin/
 *.pyc
 .python-version
 .DS_Store
+*__pycache__*
+entropy/models-*
+entropy/logs-*
+entropy/figs/*
