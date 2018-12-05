@@ -189,7 +189,6 @@ def heatmap4(running_avg_ps, running_avg_ps_baseline, indexes=[0,1,2,3]):
     for idx, ax in zip(indexes,row2):
         min_value = np.min(np.ma.log(running_avg_ps_baseline[idx]))
         ax.imshow(np.ma.log(running_avg_ps_baseline[idx]).filled(min_value), interpolation='spline16', cmap='Oranges')
-        ax.set_title("Epoch %d" % idx)
         ax.xaxis.set_ticks([])
         ax.yaxis.set_ticks([])
 

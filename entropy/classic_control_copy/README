@@ -1,0 +1,3 @@
+This is a COPY of the OpenAI Gym implementation of Continuous mountaincar and Pendulum. They are here to reflect/save the changes made to the actual implementation. 
+
+The changes allow a user to reset the environemnt's state to a specified value. To do this, the user explicitly sets the env.reset_state field and then immediately calls env.reset(). The environment will default to the normal reset behavior if the field is not set explicitly.. The env.reset_state field is reset to None after reset() is called. 
