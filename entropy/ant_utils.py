@@ -1,3 +1,27 @@
+# self.sim.data.qpos are the positions, with the first 7 element the 
+# 3D position (x,y,z) and orientation (quaternion x,y,z,w) of the torso, 
+# and the remaining 8 positions are the joint angles.
+
+# The [2:], operation removes the first 2 elements from the position, 
+# which is the X and Y position of the agent's torso.
+
+# self.sim.data.qvel are the velocities, with the first 6 elements 
+# the 3D velocity (x,y,z) and 3D angular velocity (x,y,z) and the 
+# remaining 8 are the joint velocities.
+
+# 0 - x position
+# 1 - y position
+# 2 - z position
+# 3 - x torso orientation
+# 4 - y torso orientation
+# 5 - z torso orientation
+# 6 - w torso orientation
+# 7-14 - joint angles
+
+# 15-21 - 3d velocity/angular velocity
+# 23-29 - joint velocities
+
+
 import gym
 import time
 import numpy as np
@@ -10,10 +34,10 @@ qvel = env.env.init_qvel
 obs_dim = int(env.env.state_vector().shape[0])
 action_dim = int(env.action_space.sample().shape[0])
 
-features = [2, 3] # chosen at random
-min_bin = -10
-max_bin = 10
-num_bins = 6
+features = [2,7,8,9,10]
+min_bin = -5
+max_bin = 5
+num_bins = 7
 
 space_dim = (num_bins, num_bins) # should match len(features)
 
@@ -26,9 +50,15 @@ def discretize_value(value, bins):
 #### Set up environment.
 
 def get_state_bins():
-    state_bins = []
-    for i in range(len(features)):
-        state_bins.append(discretize_range(min_bin, max_bin, num_bins))
+    state_bins = [
+        # height
+        discretize_range(0, 5, num_bins),
+        # other fields
+        discretize_range(min_bin, max_bin, num_bins),
+        discretize_range(min_bin, max_bin, num_bins),
+        discretize_range(min_bin, max_bin, num_bins),
+        discretize_range(min_bin, max_bin, num_bins)
+    ]
     return state_bins
 
 

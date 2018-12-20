@@ -107,7 +107,7 @@ def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, rende
             wrapped_env = wrappers.Monitor(env, video_dir)
             wrapped_env.unwrapped.reset_state = initial_state
             state = wrapped_env.reset()
-            state = get_obs(state)
+            # state = get_obs(state)
             
             p, random_initial_state = execute_policy_internal(wrapped_env, T, policies, state, True)
             average_p += p
@@ -116,7 +116,7 @@ def execute_average_policy(env, policies, T, initial_state=[], avg_runs=1, rende
         else:
             env.env.reset_state = initial_state
             state = env.reset()
-            state = get_obs(state)
+            # state = get_obs(state)
             p, random_initial_state = execute_policy_internal(env, T, policies, state, False)
             average_p += p
             avg_entropy += scipy.stats.entropy(average_p.flatten())

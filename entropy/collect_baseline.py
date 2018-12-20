@@ -134,8 +134,11 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         # Learn policy that maximizes current reward function.
         policy = Policy(env, args.gamma, args.lr, utils.obs_dim, utils.action_dim) 
         policy.learn_policy(reward_fn, initial_state, args.episodes, args.train_steps)
-        policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
         policies.append(policy)
+
+        if args.save_models:
+            policy.save(MODEL_DIR + 'model_' + str(i) + '.pt')
+
 
         # Get next distribution p by executing pi for T steps.
         p_videos = 'cmp_videos/%sp_%d/'% (MODEL_DIR, i) 
@@ -159,7 +162,7 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         # print(round_entropy_baseline) # running average
         # print(scipy.stats.entropy(p_baseline.flatten())) # entropy of final
 
-        reward_fn = grad_ent(p)
+        # reward_fn = grad_ent(p)
 
         round_entropy = scipy.stats.entropy(p.flatten())
         entropies.append(round_entropy)
@@ -171,6 +174,16 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
         # Estimate distribution and entropy.
         average_p, round_avg_ent, initial_state = \
             curiosity.execute_average_policy(env, policies, T, initial_state=initial_state, avg_runs=a, render=False, video_dir=entropy_videos)
+
+        # If in pendulum, set velocity to 0 with some probability
+        if args.env == "Pendulum-v0" and random.random() < 0.3:
+            initial_state[1] = 0
+
+        reward_fn = grad_ent(average_p)
+
+        print(average_p)
+        print("!  --------  !")
+        print(reward_fn)
 
         average_ps.append(average_p)
         average_entropies.append(round_avg_ent) 
@@ -252,8 +265,6 @@ def collect_entropy_policies(env, epochs, T, MODEL_DIR):
 
 def main():
 
-    save = False
-
     # Suppress scientific notation.
     np.set_printoptions(suppress=True, edgeitems=100)
 
@@ -268,14 +279,16 @@ def main():
 
     TIME = datetime.now().strftime('%Y_%m_%d-%H-%M')
     MODEL_DIR = 'models-' + args.env + '/models_' + TIME + '/'
-    if not os.path.exists(MODEL_DIR):
-        os.makedirs(MODEL_DIR)
 
-    # save metadata from the run. 
-    with open(MODEL_DIR + "metadata", "w") as metadata:
-        metadata.write("args: %s\n" % args)
-        metadata.write("num_states: %s\n" % str(utils.num_states))
-        metadata.write("state_bins: %s\n" % utils.state_bins)
+    if args.save_models:
+        if not os.path.exists(MODEL_DIR):
+            os.makedirs(MODEL_DIR)
+
+        # save metadata from the run. 
+        with open(MODEL_DIR + "metadata", "w") as metadata:
+            metadata.write("args: %s\n" % args)
+            metadata.write("num_states: %s\n" % str(utils.num_states))
+            metadata.write("state_bins: %s\n" % utils.state_bins)
 
     plotting.FIG_DIR = 'figs/' + args.env + '/'
     plotting.model_time = 'models_' + TIME + '/'

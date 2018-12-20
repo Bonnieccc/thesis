@@ -96,17 +96,22 @@ class AntEntropyPolicy(nn.Module):
     def get_obs(self): # TODO
         return self.env.env.state_vector()
 
-    def learn_policy(self, reward_fn, episodes=1000, train_steps=1000,initial_state=[]):
+    def learn_policy(self, reward_fn, initial_state=[],episodes=1000, train_steps=1000):
 
         if len(initial_state) == 0:
-            initial_state = self.init_state
+            # initial_state = self.init_state
+            initial_state = self.env.reset()
+            initial_state = initial_state[:29]
         print("init: " + str(initial_state))
+
+        qpos = initial_state[:15]
+        qvel = initial_state[15:]
 
         running_reward = 0
         running_loss = 0
         for i_episode in range(episodes):
-            if i_episode % 2 == 0:
-                self.env.env.reset_state = initial_state
+            # if i_episode % 2 == 0:
+            #     self.env.env.set_state(qpos, qvel)
             self.env.reset()
             state = self.get_obs()
             ep_reward = 0
@@ -145,7 +150,7 @@ class AntEntropyPolicy(nn.Module):
             if render:
                 env.render()
             if done:
-                break
+                env.reset()
         env.close()
         return p
 
@@ -154,21 +159,24 @@ class AntEntropyPolicy(nn.Module):
 
         if len(initial_state) == 0:
             initial_state = self.env.reset()
+            initial_state = initial_state[:29]
 
-        print("initial_state = " + str(initial_state))
+        # print("initial_state = " + str(initial_state))
+
+        qpos = initial_state[:15]
+        qvel = initial_state[15:]
 
         if video_dir != '' and render:
-            print("rendering env in execute()")
             wrapped_env = wrappers.Monitor(self.env, video_dir)
-            wrapped_env.unwrapped.reset_state = initial_state
-            state = wrapped_env.reset()
+            wrapped_env.reset()
+            wrapped_env.unwrapped.set_state(qpos, qvel)
             state = self.get_obs()
-            p = self.execute_random_internal(wrapped_env, T, state, render)
+            p = self.execute_internal(wrapped_env, T, state, render)
         else:
-            self.env.env.reset_state = initial_state
-            state = self.env.reset()
+            self.env.reset()
+            self.env.env.set_state(qpos, qvel)
             state = self.get_obs()
-            p = self.execute_random_internal(self.env, T, state, render)
+            p = self.execute_internal(self.env, T, state, render)
         
         return p/float(T)
 
@@ -189,7 +197,7 @@ class AntEntropyPolicy(nn.Module):
             if render:
                 env.render()
             if done:
-                break
+                env.reset()
         env.close()
         return p
 
@@ -198,21 +206,21 @@ class AntEntropyPolicy(nn.Module):
 
         if len(initial_state) == 0:
             initial_state = self.env.reset() # get random starting location
-            initial_state = self.init_state
+            initial_state = initial_state[:29]
 
-
-        print("initial_state= " + str(initial_state))
+        qpos = initial_state[:15]
+        qvel = initial_state[15:]
 
         if video_dir != '' and render:
             print("rendering env in execute_random()")
             wrapped_env = wrappers.Monitor(self.env, video_dir)
-            wrapped_env.unwrapped.reset_state = initial_state
-            state = wrapped_env.reset()
+            wrapped_env.reset()
+            wrapped_env.unwrapped.set_state(qpos, qvel)
             state = self.get_obs()
             p = self.execute_random_internal(wrapped_env, T, state, render)
         else:
-            self.env.env.reset_state = initial_state
-            state = self.env.reset()
+            self.env.reset()
+            self.env.env.set_state(qpos, qvel)
             state = self.get_obs()
             p = self.execute_random_internal(self.env, T, state, render)
 

@@ -23,6 +23,8 @@ parser.add_argument('--env', type=str, default='fake', metavar='env',
 parser.add_argument('--models_dir', type=str, default='/', metavar='N',
                     help='directory from which to load model policies')
 
+parser.add_argument('--save_models', action='store_true',
+                    help='collect a video of the final policy')
 parser.add_argument('--record', action='store_true',
                     help='collect a video of the final policy')
 parser.add_argument('--render', action='store_true',
@@ -119,15 +121,15 @@ def get_num_states(obs_dim, state_bins):
     elif args.env == "Pendulum-v0":
         return (pend_na, pend_nv)
 
+if args.env != 'Ant-v2':
+    action_dim = get_action_dim()
+    obs_dim = get_obs_dim()
+    state_bins = get_state_bins()
+    space_dim = get_space_dim()
 
-action_dim = get_action_dim()
-obs_dim = get_obs_dim()
-state_bins = get_state_bins()
-space_dim = get_space_dim()
+    num_states = get_num_states(obs_dim, state_bins)
 
-num_states = get_num_states(obs_dim, state_bins)
-
-print(state_bins)
+    print(state_bins)
 
 # to discretize observation from pendulum, first figure out what theta is
 # from the observation
@@ -150,18 +152,4 @@ def discretize_state(observation):
             break
         state.append(discretize_value(feature, state_bins[i]))
     return state
-
-
-
-    # window = 5
-    # test_moving_avgs = []
-    # for i in range(window-1):
-    #     test_moving_avgs.append(entropies[i])
-
-    # for avg in moving_averages(average_ps, len(average_ps)):
-    #     test_moving_avgs.append(avg)
-
-    # print(entropies)
-    # print(running_avg_ps[len(running_avg_ps)-1])
-    # print(test_moving_avgs)
 

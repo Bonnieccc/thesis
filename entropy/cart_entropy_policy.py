@@ -13,6 +13,14 @@ from gym.spaces import prng
 from gym import wrappers
 import utils
 
+# Get the initial zero-state for the env.
+def init_state(env):
+    if env == "Pendulum-v0":
+        return [np.pi, 0] 
+    elif env == "MountainCarContinuous-v0":
+        return [-0.50, 0]
+
+
 class CartEntropyPolicy(nn.Module):
     def __init__(self, env, gamma, lr, obs_dim, action_dim):
         super(CartEntropyPolicy, self).__init__()
@@ -36,7 +44,7 @@ class CartEntropyPolicy(nn.Module):
         self.obs_dim = obs_dim
         self.action_dim = action_dim
 
-        self.init_state = np.array(self.env.env.state)
+        self.init_state = np.array(init_state(utils.args.env))
         self.env.seed(int(time.time())) # seed environment
         prng.seed(int(time.time())) # seed action space
 
@@ -107,7 +115,7 @@ class CartEntropyPolicy(nn.Module):
         elif utils.args.env == "MountainCarContinuous-v0":
             return np.array(self.env.env.state)
 
-    def learn_policy(self, reward_fn, initial_state=[], episodes=1000, train_steps=1000):
+    def learn_policy(self, reward_fn, episodes=1000, train_steps=1000, initial_state=[]):
 
         if len(initial_state) == 0:
             initial_state = self.init_state
@@ -140,7 +148,7 @@ class CartEntropyPolicy(nn.Module):
 
             # Log to console.
             if i_episode % 10 == 0:
-                print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}\tAverage Loss: {:.2f}'.format(
+                print('Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}\tLoss: {:.2f}'.format(
                     i_episode, ep_reward, running_reward, running_loss))
 
     def execute_internal(self, env, T, state, render):
@@ -206,6 +214,8 @@ class CartEntropyPolicy(nn.Module):
 
         if len(initial_state) == 0:
             initial_state = self.env.reset() # get random starting location
+            initial_state = self.init_state
+
 
         print("initial_state= " + str(initial_state))
 
